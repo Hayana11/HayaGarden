@@ -56,6 +56,17 @@ public class MainActivity extends BridgeActivity {
     }
 
     @Override
+    public void onBackPressed() {
+        // 返回键先在 WebView 历史里后退（页面间导航），到头了才退出 app
+        android.webkit.WebView wv = getBridge().getWebView();
+        if (wv != null && wv.canGoBack()) {
+            wv.goBack();
+        } else {
+            super.onBackPressed();
+        }
+    }
+
+    @Override
     public void onDestroy() {
         super.onDestroy();
         if (tracker != null) tracker.stop();
