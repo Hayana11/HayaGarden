@@ -18,6 +18,12 @@ public class MainActivity extends BridgeActivity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
+        // 关掉 WebView 跟随系统字体缩放（否则手机字号设大后 app 内文字/图标全部被放大）
+        android.webkit.WebView wv = getBridge().getWebView();
+        if (wv != null) {
+            wv.getSettings().setTextZoom(100);
+        }
+
         // UsageStats 应用追踪
         tracker = new AppTracker(getApplicationContext());
         if (!tracker.hasPermission()) {
