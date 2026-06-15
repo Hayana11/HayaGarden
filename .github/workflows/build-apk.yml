@@ -34,6 +34,9 @@ jobs:
       - name: Add Android platform
         run: npx cap add android
 
+      - name: Apply native patches
+        run: bash scripts/apply-patches.sh
+
       - name: Build debug APK
         run: cd android && chmod +x gradlew && ./gradlew assembleDebug --no-daemon
 
