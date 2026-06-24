@@ -23,6 +23,7 @@ public class MainActivity extends BridgeActivity {
         android.webkit.WebView wv = getBridge().getWebView();
         if (wv != null) {
             wv.getSettings().setTextZoom(100);
+            wv.addJavascriptInterface(new NativeBridge(getApplicationContext()), "ElpisNative");
         }
 
         // UsageStats 应用追踪

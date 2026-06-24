@@ -4,9 +4,10 @@ set -e
 PKG_DIR="android/app/src/main/java/xyz/lovestyle/home"
 MANIFEST="android/app/src/main/AndroidManifest.xml"
 
-# 1. 注入 AppTracker + 自定义 MainActivity
+# 1. 注入 AppTracker + 自定义 MainActivity + NativeBridge
 cp scripts/AppTracker.java   "$PKG_DIR/AppTracker.java"
 cp scripts/MainActivity.java "$PKG_DIR/MainActivity.java"
+cp scripts/NativeBridge.java "$PKG_DIR/NativeBridge.java"
 
 # 2. 给 manifest 元素加 xmlns:tools
 sed -i 's|xmlns:android="http://schemas.android.com/apk/res/android">|xmlns:android="http://schemas.android.com/apk/res/android"\n    xmlns:tools="http://schemas.android.com/tools">|' "$MANIFEST"
