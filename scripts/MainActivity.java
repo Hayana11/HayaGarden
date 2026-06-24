@@ -47,6 +47,39 @@ public class MainActivity extends BridgeActivity {
                 requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS}, 1002);
             }
         }
+
+        // 前台位置权限申请（精确 + 粗略）
+        if (checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION)
+                != PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(new String[]{
+                Manifest.permission.ACCESS_FINE_LOCATION,
+                Manifest.permission.ACCESS_COARSE_LOCATION
+            }, 1003);
+        } else {
+            requestBackgroundLocationIfNeeded();
+        }
+    }
+
+    private void requestBackgroundLocationIfNeeded() {
+        // Android 10+：后台位置需要单独申请，且必须在前台权限授予后再申请
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            if (checkSelfPermission(Manifest.permission.ACCESS_BACKGROUND_LOCATION)
+                    != PackageManager.PERMISSION_GRANTED) {
+                requestPermissions(new String[]{
+                    Manifest.permission.ACCESS_BACKGROUND_LOCATION
+                }, 1004);
+            }
+        }
+    }
+
+    @Override
+    public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        if (requestCode == 1003) {
+            boolean granted = grantResults.length > 0
+                    && grantResults[0] == PackageManager.PERMISSION_GRANTED;
+            if (granted) requestBackgroundLocationIfNeeded();
+        }
     }
 
     private void scheduleNotificationWorker() {

@@ -32,10 +32,15 @@ sed -i '/android.permission.POST_NOTIFICATIONS/a\    <uses-permission android:na
 # 8. ForegroundService 声明（加在 </application> 前）
 sed -i 's|</application>|        <service android:name=".ForegroundService" android:foregroundServiceType="dataSync" />\n    </application>|' "$MANIFEST"
 
-# 9. RECEIVE_BOOT_COMPLETED 权限
-sed -i '/android.permission.FOREGROUND_SERVICE/a\    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />' "$MANIFEST"
+# 9. 位置权限
+sed -i '/android.permission.FOREGROUND_SERVICE/a\    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />' "$MANIFEST"
+sed -i '/ACCESS_FINE_LOCATION/a\    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />' "$MANIFEST"
+sed -i '/ACCESS_COARSE_LOCATION/a\    <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />' "$MANIFEST"
 
-# 10. BootReceiver 声明（开机自启 + 华为 QUICKBOOT）
+# 10. RECEIVE_BOOT_COMPLETED 权限
+sed -i '/ACCESS_BACKGROUND_LOCATION/a\    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />' "$MANIFEST"
+
+# 11. BootReceiver 声明（开机自启 + 华为 QUICKBOOT）
 sed -i 's|</application>|        <receiver android:name=".BootReceiver" android:enabled="true" android:exported="true">\n            <intent-filter>\n                <action android:name="android.intent.action.BOOT_COMPLETED" />\n                <action android:name="android.intent.action.QUICKBOOT_POWERON" />\n            </intent-filter>\n        </receiver>\n    </application>|' "$MANIFEST"
 
 echo "patches applied"
