@@ -1,6 +1,7 @@
 package xyz.lovestyle.home;
 
 import android.Manifest;
+import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.os.Build;
 import android.os.Bundle;
@@ -31,6 +32,9 @@ public class MainActivity extends BridgeActivity {
         } else {
             tracker.start();
         }
+
+        // 前台服务保活（防止系统后台杀进程）
+        startService(new Intent(this, ForegroundService.class));
 
         // WorkManager 轮询通知
         scheduleNotificationWorker();
