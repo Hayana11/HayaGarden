@@ -4,10 +4,11 @@ set -e
 PKG_DIR="android/app/src/main/java/xyz/lovestyle/home"
 MANIFEST="android/app/src/main/AndroidManifest.xml"
 
-# 1. 注入 AppTracker + 自定义 MainActivity + NativeBridge
+# 1. 注入 AppTracker + 自定义 MainActivity + NativeBridge + BootReceiver
 cp scripts/AppTracker.java   "$PKG_DIR/AppTracker.java"
 cp scripts/MainActivity.java "$PKG_DIR/MainActivity.java"
 cp scripts/NativeBridge.java "$PKG_DIR/NativeBridge.java"
+cp scripts/BootReceiver.java "$PKG_DIR/BootReceiver.java"
 
 # 2. 给 manifest 元素加 xmlns:tools
 sed -i 's|xmlns:android="http://schemas.android.com/apk/res/android">|xmlns:android="http://schemas.android.com/apk/res/android"\n    xmlns:tools="http://schemas.android.com/tools">|' "$MANIFEST"
@@ -30,5 +31,11 @@ sed -i '/android.permission.POST_NOTIFICATIONS/a\    <uses-permission android:na
 
 # 8. ForegroundService 声明（加在 </application> 前）
 sed -i 's|</application>|        <service android:name=".ForegroundService" android:foregroundServiceType="dataSync" />\n    </application>|' "$MANIFEST"
+
+# 9. RECEIVE_BOOT_COMPLETED 权限
+sed -i '/android.permission.FOREGROUND_SERVICE/a\    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />' "$MANIFEST"
+
+# 10. BootReceiver 声明（开机自启 + 华为 QUICKBOOT）
+sed -i 's|</application>|        <receiver android:name=".BootReceiver" android:enabled="true" android:exported="true">\n            <intent-filter>\n                <action android:name="android.intent.action.BOOT_COMPLETED" />\n                <action android:name="android.intent.action.QUICKBOOT_POWERON" />\n            </intent-filter>\n        </receiver>\n    </application>|' "$MANIFEST"
 
 echo "patches applied"
