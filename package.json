@@ -1,7 +1,7 @@
 {
-  "name": "vii-app",
+  "name": "elpis-app",
   "version": "1.0.0",
-  "description": "VII — WebView shell for love-style.xyz",
+  "description": "Elpis — WebView shell for love-style.xyz",
   "scripts": {
     "build": "echo 'no local build needed'"
   },
@@ -10,6 +10,7 @@
     "@capacitor/core": "^6.0.0"
   },
   "devDependencies": {
+    "@capacitor/assets": "^3.0.0",
     "@capacitor/cli": "^6.0.0"
   }
 }
