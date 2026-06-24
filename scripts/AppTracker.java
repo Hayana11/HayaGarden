@@ -75,7 +75,12 @@ public class AppTracker {
         AppOpsManager aom = (AppOpsManager) ctx.getSystemService(Context.APP_OPS_SERVICE);
         int mode = aom.checkOpNoThrow(AppOpsManager.OPSTR_GET_USAGE_STATS,
                 android.os.Process.myUid(), ctx.getPackageName());
-        return mode == AppOpsManager.MODE_ALLOWED;
+        if (mode == AppOpsManager.MODE_DENIED) return false;
+        // 某些 ROM 把未授权状态报告为 MODE_ALLOWED/MODE_DEFAULT，需实际查询验证
+        long now = System.currentTimeMillis();
+        List<UsageStats> probe = usm.queryUsageStats(
+                UsageStatsManager.INTERVAL_DAILY, now - 60_000L, now);
+        return probe != null && !probe.isEmpty();
     }
 
     public void openPermissionSettings() {
