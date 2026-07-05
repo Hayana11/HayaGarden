@@ -20,9 +20,10 @@ public class MainActivity extends BridgeActivity {
         super.onCreate(savedInstanceState);
 
         // 关掉 WebView 跟随系统字体缩放（否则手机字号设大后 app 内文字/图标全部被放大）
+        // 90 = 在网页原始字号基础上再缩一档，缓解 app 内字体偏挤（只影响 app，浏览器不变）
         android.webkit.WebView wv = getBridge().getWebView();
         if (wv != null) {
-            wv.getSettings().setTextZoom(100);
+            wv.getSettings().setTextZoom(90);
             wv.addJavascriptInterface(new NativeBridge(getApplicationContext()), "ElpisNative");
         }
 

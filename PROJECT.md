@@ -68,6 +68,19 @@ apply-patches.sh 做了什么：
 
 ---
 
+## ⚠️ WebView 兼容性红线（2026-07-05 排查结论）
+
+手机是华为 CDY-AN95（Android 10，无 Google Play），**系统 WebView 永远停在 Chrome 78**，不会更新。
+因此 VPS 前端（/opt/frontend/static/*.html、*.js）必须遵守：
+
+- **JS 语法上限 ES2019**：禁止可选链 `?.`、空值合并 `??`、逻辑赋值 `||=`/`&&=`/`??=`、`replaceAll`、`Promise.any`、`.at()`、`crypto.randomUUID` 等 Chrome 79+ 特性。一个 `?.` 会让整个 `<script>` 块解析失败、页面完全瘫痪（board 就是这么死的：7/1 三栏重构引入 `?.`，app 里 board 自此不发任何 API 请求）
+- **CSS 注意**：flex 容器的 `gap` Chrome 84+ 才支持（78 里被忽略、元素挤在一起）；`clamp()`/`min()`/`max()` 是 79+
+- **排错通道**：app 内 WebView 开不了 DevTools。board/calendar 的 `<head>` 里装了 `window.onerror` 上报（POST `/api/client-error`），报错落在 VPS `/opt/frontend/client_errors.log`，含 UA/页面/行号。新页面出问题先把这段 beacon 复制进去
+- **验证方法**：`npx acorn --ecma2019` 解析所有内联 script（或用 node+acorn `{ecmaVersion:2019}` 扫一遍），过不了的就是 app 里的死亡脚本
+- 改 static 资源后**必须 bump sw.js 的 CACHE 版本**（家规，否则 app 里 Service Worker 供旧文件）
+
+---
+
 ## 已有的原生功能
 
 | 功能 | 文件 | 说明 |
