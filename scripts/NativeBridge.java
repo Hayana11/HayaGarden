@@ -147,6 +147,12 @@ public class NativeBridge {
         return ScreenCaptureService.isReady();
     }
 
+    /** 停止屏幕共享（释放投屏，撤掉常驻通知） */
+    @JavascriptInterface
+    public void stopScreenCapture() {
+        ScreenCaptureService.stopSharing(ctx);
+    }
+
     /** 是否在每次 app 启动时自动拉起投屏授权（默认开）。关掉后只能手动截屏时再授权。 */
     @JavascriptInterface
     public void setScreenCaptureAuto(boolean enabled) {

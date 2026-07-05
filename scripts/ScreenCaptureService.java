@@ -3,6 +3,7 @@ package xyz.lovestyle.home;
 import android.app.Notification;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
+import android.app.PendingIntent;
 import android.app.Service;
 import android.content.Context;
 import android.content.Intent;
@@ -28,6 +29,9 @@ import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.ByteBuffer;
+import java.text.SimpleDateFormat;
+import java.util.Date;
+import java.util.Locale;
 
 /**
  * 常驻的 MediaProjection 截屏服务。
@@ -35,8 +39,15 @@ import java.nio.ByteBuffer;
  * 流程：{@link ScreenCapturePermissionActivity} 拿到系统授权 token 后，用
  * {@code ACTION_START} 携带 resultCode/data 启动本服务；服务保持 MediaProjection +
  * VirtualDisplay + ImageReader 常驻，之后任何时候收到 {@code ACTION_CAPTURE}（来自
- * ForegroundService 的推送命令或 NativeBridge 的 JS 调用）都能秒抓一帧上传，
- * 不再需要重新弹系统授权框。
+ * ForegroundService 的推送命令 command="screenshot" 或 NativeBridge 的 JS 调用）
+ * 都能秒抓一帧上传，不再需要重新弹系统授权框。
+ *
+ * 【非静默】原则（华为 Android 10 上 MediaProjection 本就会强制在状态栏亮投屏图标，
+ * 藏不住，所以索性做清楚）：
+ *   1. 服务运行时常驻一条前台通知“屏幕共享开启中 · 点这里可关闭”，随时能一键停止。
+ *   2. 每一次真正截屏，都会再弹一条“费佳看了你的屏幕一眼 · HH:mm”，客户端强制执行，
+ *      与后端是否“悄悄”请求无关——只要截了，手机上一定看得见。
+ * 仅用于装在本人设备上、由本人的 AI 伴侣查看，属自愿的屏幕共享。
  *
  * 目标机型是华为 CDY-AN95 / Android 10，MediaProjection 可长期持有并重复抓帧。
  */
@@ -49,8 +60,10 @@ public class ScreenCaptureService extends Service {
     static final String EXTRA_RESULT_CODE = "result_code";
     static final String EXTRA_RESULT_DATA = "result_data";
 
-    private static final String CHANNEL_ID = "elpis_capture";
-    private static final int    NOTIF_ID   = 9101;
+    private static final String CHAN_ONGOING = "elpis_capture";      // 常驻共享提示
+    private static final String CHAN_SHOT    = "elpis_capture_shot"; // 每次截屏提醒
+    private static final int    NOTIF_ONGOING = 9101;
+    private static final int    NOTIF_SHOT    = 9102;
     private static final String UPLOAD_URL = "https://love-style.xyz/api/screenshot/upload";
 
     private MediaProjection projection;
@@ -60,7 +73,7 @@ public class ScreenCaptureService extends Service {
     private Handler bgHandler;
     private int width, height, densityDpi;
 
-    /** 供 JS / 推送命令查询：投屏授权是否已就绪 */
+    /** 供 JS / 推送命令查询：投屏授权是否已就绪（即共享是否开启中） */
     static boolean isReady() { return sReady; }
     private static volatile boolean sReady = false;
 
@@ -70,10 +83,16 @@ public class ScreenCaptureService extends Service {
         try { ctx.startService(i); } catch (Exception e) { Log.w(TAG, "requestCapture: " + e); }
     }
 
+    /** 停止共享（释放 MediaProjection） */
+    static void stopSharing(Context ctx) {
+        Intent i = new Intent(ctx, ScreenCaptureService.class).setAction(ACTION_STOP);
+        try { ctx.startService(i); } catch (Exception e) { Log.w(TAG, "stopSharing: " + e); }
+    }
+
     @Override
     public void onCreate() {
         super.onCreate();
-        createChannel();
+        createChannels();
         startForegroundCompat();
         bgThread = new HandlerThread("screen-capture");
         bgThread.start();
@@ -151,6 +170,9 @@ public class ScreenCaptureService extends Service {
         }
         if (bmp == null) { Log.w(TAG, "capture: no frame"); return; }
 
+        // 【非静默保证】截到了就在状态栏亮一条提醒，客户端强制执行
+        notifyCaptured();
+
         ByteArrayOutputStream baos = new ByteArrayOutputStream();
         bmp.compress(Bitmap.CompressFormat.JPEG, 70, baos);
         bmp.recycle();
@@ -212,29 +234,58 @@ public class ScreenCaptureService extends Service {
     @Override
     public IBinder onBind(Intent intent) { return null; }
 
-    private void createChannel() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            NotificationChannel ch = new NotificationChannel(
-                    CHANNEL_ID, "Elpis 截屏", NotificationManager.IMPORTANCE_MIN);
-            ch.setShowBadge(false);
-            NotificationManager nm = getSystemService(NotificationManager.class);
-            if (nm != null) nm.createNotificationChannel(ch);
-        }
+    // ── 通知 ─────────────────────────────────────────────────
+    private void createChannels() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return;
+        NotificationManager nm = getSystemService(NotificationManager.class);
+        if (nm == null) return;
+        NotificationChannel ongoing = new NotificationChannel(
+                CHAN_ONGOING, "屏幕共享", NotificationManager.IMPORTANCE_LOW);
+        ongoing.setDescription("屏幕共享开启时的常驻提示");
+        ongoing.setShowBadge(false);
+        nm.createNotificationChannel(ongoing);
+        NotificationChannel shot = new NotificationChannel(
+                CHAN_SHOT, "截屏提醒", NotificationManager.IMPORTANCE_DEFAULT);
+        shot.setDescription("每次费佳查看屏幕时提醒你");
+        nm.createNotificationChannel(shot);
     }
 
     private void startForegroundCompat() {
-        Notification notif = new NotificationCompat.Builder(this, CHANNEL_ID)
-                .setContentTitle("Elpis")
-                .setContentText("屏幕镜像已就绪")
-                .setSmallIcon(android.R.drawable.ic_menu_camera)
-                .setPriority(NotificationCompat.PRIORITY_MIN)
-                .setSilent(true)
-                .build();
+        Notification notif = buildOngoingNotification();
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            startForeground(NOTIF_ID, notif,
+            startForeground(NOTIF_ONGOING, notif,
                     android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION);
         } else {
-            startForeground(NOTIF_ID, notif);
+            startForeground(NOTIF_ONGOING, notif);
         }
+    }
+
+    private Notification buildOngoingNotification() {
+        Intent stopIntent = new Intent(this, ScreenCaptureService.class).setAction(ACTION_STOP);
+        PendingIntent stopPi = PendingIntent.getService(this, 1, stopIntent,
+                PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+        return new NotificationCompat.Builder(this, CHAN_ONGOING)
+                .setContentTitle("屏幕共享开启中")
+                .setContentText("费佳能看到你的屏幕 · 点这里可关闭")
+                .setSmallIcon(android.R.drawable.ic_menu_view)
+                .setOngoing(true)
+                .setSilent(true)
+                .setPriority(NotificationCompat.PRIORITY_LOW)
+                .setContentIntent(stopPi)
+                .addAction(android.R.drawable.ic_menu_close_clear_cancel, "停止共享", stopPi)
+                .build();
+    }
+
+    private void notifyCaptured() {
+        NotificationManager nm = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
+        if (nm == null) return;
+        String time = new SimpleDateFormat("HH:mm", Locale.US).format(new Date());
+        nm.notify(NOTIF_SHOT, new NotificationCompat.Builder(this, CHAN_SHOT)
+                .setContentTitle("费佳看了你的屏幕一眼")
+                .setContentText(time)
+                .setSmallIcon(android.R.drawable.ic_menu_camera)
+                .setAutoCancel(true)
+                .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+                .build());
     }
 }

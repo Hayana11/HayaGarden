@@ -102,7 +102,7 @@ apply-patches.sh 做了什么：
 | 屏幕时间/电量/GPS | `ForegroundService.java` | 常驻前台服务每 10min 上报 |
 | 推送通知（秒达） | `ForegroundService.java` | 常驻 HTTP 长轮询，后端一发消息立即弹 |
 | 推送通知（兜底） | `NotificationWorker.java` | WorkManager 15min 轮询，长轮询被杀时补网 |
-| 截屏 | `ScreenCaptureService.java` | MediaProjection 常驻，收到 `screenshot` 命令或 JS 调用即抓帧上传 |
+| 截屏 | `ScreenCaptureService.java` | MediaProjection 常驻，收到 `screenshot` 命令或 JS 调用即抓帧上传；**非静默**：常驻"共享中·可关闭"通知 + 每次截屏弹"看了你屏幕一眼·HH:mm" |
 | 后台保活 | `ForegroundService` + `NativeBridge` | 前台服务 + Doze 白名单 + 开机自启 + onTaskRemoved 重启 |
 | JS 桥 | `NativeBridge.java` | `window.ElpisNative.*`（见下方 JS API） |
 
@@ -114,7 +114,8 @@ apply-patches.sh 做了什么：
 | `getScreenTime()` | JSON string | 今日各 app 前台时长 Top10 + 总分钟 |
 | `takeScreenshot()` | void | 立即截屏上传；未授权则自动拉起投屏授权框 |
 | `requestScreenCapturePermission()` | void | 手动拉起投屏授权框 |
-| `isScreenCaptureReady()` | boolean | 投屏授权是否已就绪 |
+| `isScreenCaptureReady()` | boolean | 投屏授权是否已就绪（=共享是否开启中） |
+| `stopScreenCapture()` | void | 停止屏幕共享，释放投屏 |
 | `hasUsageAccess()` | boolean | 是否已授予"使用情况访问" |
 | `openUsageAccessSettings()` | void | 打开 UsageStats 授权设置页 |
 | `isIgnoringBatteryOptimizations()` | boolean | 是否已在电池优化白名单 |
