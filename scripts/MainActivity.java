@@ -133,7 +133,7 @@ public class MainActivity extends BridgeActivity {
     }
 
     @Override
-    protected void onResume() {
+    public void onResume() {
         super.onResume();
         // 用户可能刚从设置页授予了 UsageStats，回到 app 时补启动追踪
         if (tracker != null && tracker.hasPermission()) {
