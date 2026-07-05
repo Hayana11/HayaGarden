@@ -27,7 +27,12 @@ HayaGarden/
 │   ├── apply-patches.sh       # CI 构建时把下面三个 Java 文件注入到 android/ 目录
 │   ├── MainActivity.java      # 自定义主活动：返回键逻辑 + WebView 字体缩放 fix
 │   ├── AppTracker.java        # 60s 轮询 UsageStatsManager，上报前台 app 到后端
-│   └── NotificationWorker.java # WorkManager 15min 轮询，拉新消息推送本地通知
+│   ├── ForegroundService.java # 常驻前台服务：GPS/电量/屏幕时间上报 + 推送长轮询
+│   ├── NotificationWorker.java # WorkManager 15min 轮询，长轮询被杀时的兜底
+│   ├── ScreenCaptureService.java            # MediaProjection 常驻截屏，按需抓帧上传
+│   ├── ScreenCapturePermissionActivity.java # 透明活动，弹系统投屏授权框
+│   ├── NativeBridge.java      # JS ↔ 原生桥（电量/屏幕时间/截屏/权限）
+│   └── BootReceiver.java      # 开机自启 ForegroundService
 └── .github/workflows/
     └── build-apk.yml          # CI 流水线（见下）
 ```
@@ -47,7 +52,13 @@ cd android && ./gradlew assembleDebug
 
 apply-patches.sh 做了什么：
 1. 把 `scripts/*.java` 复制进 `android/app/src/main/java/xyz/lovestyle/home/`
-2. AndroidManifest 追加 `PACKAGE_USAGE_STATS`、`POST_NOTIFICATIONS` 权限
+2. AndroidManifest：
+   - 一次性追加权限块（`PACKAGE_USAGE_STATS`、`POST_NOTIFICATIONS`、`FOREGROUND_SERVICE` 及其
+     Android 14 细分类型 `_DATA_SYNC`/`_MEDIA_PROJECTION`、`REQUEST_IGNORE_BATTERY_OPTIMIZATIONS`、
+     位置权限、`RECEIVE_BOOT_COMPLETED`）
+   - 一次性追加组件声明（`ForegroundService`/`ScreenCaptureService`/`ScreenCapturePermissionActivity`/`BootReceiver`）
+   - ⚠️ 权限和组件都用**单条 sed 整块插入**，不要再用多条 `sed /pattern/a` 串接——那样后一条会匹配到
+     前一条刚插入的行，导致位置权限等被重复插入多遍（历史坑）
 3. `build.gradle` 追加 WorkManager 依赖 `androidx.work:work-runtime:2.9.0`
 
 ---
@@ -86,9 +97,48 @@ apply-patches.sh 做了什么：
 | 功能 | 文件 | 说明 |
 |------|------|------|
 | 返回键 | `MainActivity.java` | WebView 内先后退，到根页面才退 app |
-| 字体缩放 | `MainActivity.java` | `setTextZoom(100)` 屏蔽系统字体大小影响 |
-| App 使用追踪 | `AppTracker.java` | 每 60s 读 UsageStats，POST 到 `/api/activity` |
-| 推送通知 | `NotificationWorker.java` | WorkManager 每 15min 轮询，有新消息弹本地通知 |
+| 字体缩放 | `MainActivity.java` | `setTextZoom(90)` 屏蔽系统字体大小影响 |
+| App 使用追踪 | `AppTracker.java` | 每 60s 读 UsageStats，上报前台 app |
+| 屏幕时间/电量/GPS | `ForegroundService.java` | 常驻前台服务每 10min 上报 |
+| 推送通知（秒达） | `ForegroundService.java` | 常驻 HTTP 长轮询，后端一发消息立即弹 |
+| 推送通知（兜底） | `NotificationWorker.java` | WorkManager 15min 轮询，长轮询被杀时补网 |
+| 截屏 | `ScreenCaptureService.java` | MediaProjection 常驻，收到 `screenshot` 命令或 JS 调用即抓帧上传 |
+| 后台保活 | `ForegroundService` + `NativeBridge` | 前台服务 + Doze 白名单 + 开机自启 + onTaskRemoved 重启 |
+| JS 桥 | `NativeBridge.java` | `window.ElpisNative.*`（见下方 JS API） |
+
+### `window.ElpisNative` JS API（WebView 内可直接调用）
+
+| 方法 | 返回 | 说明 |
+|------|------|------|
+| `getBattery()` | JSON string | 电量/充电状态/温度 |
+| `getScreenTime()` | JSON string | 今日各 app 前台时长 Top10 + 总分钟 |
+| `takeScreenshot()` | void | 立即截屏上传；未授权则自动拉起投屏授权框 |
+| `requestScreenCapturePermission()` | void | 手动拉起投屏授权框 |
+| `isScreenCaptureReady()` | boolean | 投屏授权是否已就绪 |
+| `hasUsageAccess()` | boolean | 是否已授予"使用情况访问" |
+| `openUsageAccessSettings()` | void | 打开 UsageStats 授权设置页 |
+| `isIgnoringBatteryOptimizations()` | boolean | 是否已在电池优化白名单 |
+| `requestIgnoreBatteryOptimizations()` | void | 请求加入电池优化白名单 |
+
+> 调用前判空：`if (window.ElpisNative) { ... }`（浏览器里不存在该对象）。
+
+---
+
+## ⚠️ 后端需要提供/调整的接口（VPS 侧，不在本 repo）
+
+新原生功能依赖以下后端契约，改这个 repo 前先确认 VPS 已就绪：
+
+1. **推送长轮询** `GET /api/wake_log/pending_notification?wait=<秒>&since=<上次id>`
+   - `wait`：后端最多挂起这么多秒等新消息（长轮询）。**不支持也没关系**——立即返回即可，
+     客户端会自己每 3s 兜底重试；但支持 `wait` 才能真正做到"前端一发、手机秒弹"。
+   - 返回 JSON：`{"has_message":bool, "id":"<唯一id>", "title":"...", "content":"...", "command":"screenshot"|""}`
+   - `id` 用于客户端去重（长轮询 + WorkManager 双通道共用），务必对每条消息唯一且稳定。
+   - `command="screenshot"` 会触发客户端静默截屏并上传（见下）。
+2. **截屏上传** `POST /api/screenshot/upload`
+   - body 为 `image/jpeg` 原始字节，header `X-Capture-Ts` 是毫秒时间戳。
+   - 后端存盘即可，返回 2xx。
+3. 已有：`POST /api/geo/report`、`POST /api/device/report`（含 `screen_today_minutes`）、
+   `GET /api/dream/events`（AppTracker 上报）。
 
 ---
 

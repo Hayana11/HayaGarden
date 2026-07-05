@@ -1,12 +1,17 @@
 package xyz.lovestyle.home;
 
+import android.app.AppOpsManager;
 import android.app.usage.UsageStats;
 import android.app.usage.UsageStatsManager;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.pm.PackageManager;
+import android.net.Uri;
 import android.os.BatteryManager;
+import android.os.Build;
+import android.os.PowerManager;
+import android.provider.Settings;
 import android.webkit.JavascriptInterface;
 import java.util.ArrayList;
 import java.util.Calendar;
@@ -115,6 +120,103 @@ public class NativeBridge {
 
         } catch (Exception e) {
             return "{\"error\":\"" + e.getMessage() + "\"}";
+        }
+    }
+
+    // ── 截屏 ──────────────────────────────────────────────────
+    /** 前端主动触发一次截屏（需已授权投屏，否则会拉起授权框） */
+    @JavascriptInterface
+    public void takeScreenshot() {
+        if (ScreenCaptureService.isReady()) {
+            ScreenCaptureService.requestCapture(ctx);
+        } else {
+            requestScreenCapturePermission();
+        }
+    }
+
+    /** 拉起系统"允许录屏/投屏"授权框（透明活动完成后常驻截屏服务） */
+    @JavascriptInterface
+    public void requestScreenCapturePermission() {
+        Intent i = new Intent(ctx, ScreenCapturePermissionActivity.class);
+        i.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        ctx.startActivity(i);
+    }
+
+    @JavascriptInterface
+    public boolean isScreenCaptureReady() {
+        return ScreenCaptureService.isReady();
+    }
+
+    /** 是否在每次 app 启动时自动拉起投屏授权（默认开）。关掉后只能手动截屏时再授权。 */
+    @JavascriptInterface
+    public void setScreenCaptureAuto(boolean enabled) {
+        ctx.getSharedPreferences("elpis_push", Context.MODE_PRIVATE)
+                .edit().putBoolean("screencap_enabled", enabled).apply();
+    }
+
+    @JavascriptInterface
+    public boolean isScreenCaptureAuto() {
+        return ctx.getSharedPreferences("elpis_push", Context.MODE_PRIVATE)
+                .getBoolean("screencap_enabled", true);
+    }
+
+    // ── 屏幕使用权限（UsageStats）─────────────────────────────
+    @JavascriptInterface
+    public boolean hasUsageAccess() {
+        try {
+            AppOpsManager aom = (AppOpsManager) ctx.getSystemService(Context.APP_OPS_SERVICE);
+            int mode = aom.checkOpNoThrow(AppOpsManager.OPSTR_GET_USAGE_STATS,
+                    android.os.Process.myUid(), ctx.getPackageName());
+            if (mode == AppOpsManager.MODE_ERRORED) return false;
+            long now = System.currentTimeMillis();
+            UsageStatsManager usm = (UsageStatsManager)
+                    ctx.getSystemService(Context.USAGE_STATS_SERVICE);
+            List<UsageStats> probe = usm.queryUsageStats(
+                    UsageStatsManager.INTERVAL_DAILY, now - 60_000L, now);
+            return probe != null && !probe.isEmpty();
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    /** 打开系统"有权查看使用情况"设置页，让用户显式授予 UsageStats */
+    @JavascriptInterface
+    public void openUsageAccessSettings() {
+        try {
+            Intent i = new Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS);
+            i.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            ctx.startActivity(i);
+        } catch (Exception e) {
+            Intent i = new Intent(Settings.ACTION_SETTINGS);
+            i.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            ctx.startActivity(i);
+        }
+    }
+
+    // ── 后台保活：电池优化白名单 ──────────────────────────────
+    @JavascriptInterface
+    public boolean isIgnoringBatteryOptimizations() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return true;
+        PowerManager pm = (PowerManager) ctx.getSystemService(Context.POWER_SERVICE);
+        return pm != null && pm.isIgnoringBatteryOptimizations(ctx.getPackageName());
+    }
+
+    /** 请求把 app 加入电池优化白名单（Doze 豁免），防止后台被清 */
+    @JavascriptInterface
+    @SuppressWarnings("BatteryLife")
+    public void requestIgnoreBatteryOptimizations() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return;
+        try {
+            Intent i = new Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
+                    Uri.parse("package:" + ctx.getPackageName()));
+            i.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            ctx.startActivity(i);
+        } catch (Exception e) {
+            try {
+                Intent i = new Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS);
+                i.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                ctx.startActivity(i);
+            } catch (Exception ignored) {}
         }
     }
 }
