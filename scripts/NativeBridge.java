@@ -123,6 +123,29 @@ public class NativeBridge {
         }
     }
 
+    /** 写入 pocket token / ws 并立即重连（App 内设置页调用） */
+    @JavascriptInterface
+    public String setPocketConfig(String token, String ws) {
+        try {
+            android.content.SharedPreferences.Editor ed =
+                    ctx.getSharedPreferences("elpis_pocket", Context.MODE_PRIVATE).edit();
+            if (token != null) ed.putString("pocket_token", token.trim());
+            if (ws != null && !ws.trim().isEmpty()) {
+                ed.putString("pocket_ws", ws.trim());
+            }
+            ed.apply();
+            PocketManager.get(ctx).reloadConfig();
+            return getPocketStatus();
+        } catch (Exception e) {
+            return "{\"error\":\"" + e.getMessage() + "\"}";
+        }
+    }
+
+    @JavascriptInterface
+    public String getPocketStatus() {
+        return PocketManager.get(ctx).getStatusJson();
+    }
+
     // ── 截屏 ──────────────────────────────────────────────────
     /** 前端主动触发一次截屏（需已授权投屏，否则会拉起授权框） */
     @JavascriptInterface

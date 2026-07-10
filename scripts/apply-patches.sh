@@ -14,6 +14,7 @@ cp scripts/ForegroundService.java               "$PKG_DIR/ForegroundService.java
 cp scripts/ScreenCaptureService.java            "$PKG_DIR/ScreenCaptureService.java"
 cp scripts/ScreenCapturePermissionActivity.java "$PKG_DIR/ScreenCapturePermissionActivity.java"
 cp scripts/PocketClient.java              "$PKG_DIR/PocketClient.java"
+cp scripts/PocketManager.java             "$PKG_DIR/PocketManager.java"
 
 # 2. 给 manifest 根元素加 xmlns:tools
 sed -i 's|xmlns:android="http://schemas.android.com/apk/res/android">|xmlns:android="http://schemas.android.com/apk/res/android"\n    xmlns:tools="http://schemas.android.com/tools">|' "$MANIFEST"

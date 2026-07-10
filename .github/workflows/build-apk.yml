@@ -5,6 +5,7 @@ on:
     branches:
       - main
       - 'claude/**'
+      - 'cursor/**'
     paths:
       # App 加载的是远程网页（capacitor.config.json 的 server.url），
       # 前端/后端代码改动不需要重新打包 APK。只有下面这些原生层相关
@@ -17,6 +18,17 @@ on:
       - 'www/**'
       - '.github/workflows/build-apk.yml'
   workflow_dispatch:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'capacitor.config.json'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'assets/**'
+      - 'scripts/**'
+      - 'www/**'
+      - '.github/workflows/build-apk.yml'
 
 jobs:
   build:

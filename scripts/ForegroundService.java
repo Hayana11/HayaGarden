@@ -50,6 +50,14 @@ public class ForegroundService extends Service {
     public void onCreate() {
         super.onCreate();
         createNotificationChannel();
+        PocketClient.setConnectionListener(connected -> refreshForegroundNotification());
+        PocketManager.get(this).start();
+        refreshForegroundNotification();
+        startLocationReporting();
+        startPushLoop();
+    }
+
+    private void refreshForegroundNotification() {
         Notification notif = new NotificationCompat.Builder(this, CHANNEL_ID)
                 .setContentTitle(pocketTitle())
                 .setSmallIcon(android.R.drawable.ic_dialog_info)
@@ -57,8 +65,6 @@ public class ForegroundService extends Service {
                 .setSilent(true)
                 .build();
         startForegroundCompat(notif);
-        startLocationReporting();
-        startPushLoop();
     }
 
     private void startForegroundCompat(Notification notif) {

@@ -143,9 +143,8 @@ apply-patches.sh 做了什么：
    `GET /api/dream/events`（AppTracker 上报）。
 4. **pocket-browser**（P1）：手机连 `wss://love-style.xyz/pocket/ws`，握手头 `Authorization: Bearer <token>`。
    token 与 VPS `/opt/pocket/.env` 的 `POCKET_TOKEN` 相同。
-   App 内写入：`adb shell run-as xyz.lovestyle.home` 或 SharedPreferences `elpis_pocket`：
-   - `pocket_token` — 必填
-   - `pocket_ws` — 可选，默认 `wss://love-style.xyz/pocket/ws`
+   **App 内设置页**：`https://love-style.xyz/pocket-settings.html`（调用 `ElpisNative.setPocketConfig` / `getPocketStatus`）。
+   Pocket WS 由 **ForegroundService → PocketManager** 持有，Activity 划掉后仍在线（fallback WebView）。
 
 ---
 

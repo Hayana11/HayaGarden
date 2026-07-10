@@ -23,8 +23,9 @@ public class PocketClient {
 
     private static final String DEFAULT_WS = "wss://love-style.xyz/pocket/ws";
     private static volatile boolean connected;
+    private static ConnectionListener connectionListener;
 
-    private final WebView webView;
+    private volatile WebView webView;
     private final String serverWs;
     private final String token;
     private final Handler main = new Handler(Looper.getMainLooper());
@@ -36,10 +37,22 @@ public class PocketClient {
     private boolean shouldReconnect = true;
     private long retryDelayMs = 1000L;
 
+    public interface ConnectionListener {
+        void onConnectionChanged(boolean connected);
+    }
+
+    public static void setConnectionListener(ConnectionListener listener) {
+        connectionListener = listener;
+    }
+
     public PocketClient(WebView webView, String serverWs, String token) {
         this.webView = webView;
         this.serverWs = (serverWs == null || serverWs.isEmpty()) ? DEFAULT_WS : serverWs;
         this.token = token;
+    }
+
+    public void setWebView(WebView wv) {
+        if (wv != null) this.webView = wv;
     }
 
     public static boolean isConnected() {
@@ -57,6 +70,7 @@ public class PocketClient {
     public void disconnect() {
         shouldReconnect = false;
         connected = false;
+        notifyConnection(false);
         if (socket != null) {
             socket.close(1000, "bye");
             socket = null;
@@ -73,6 +87,7 @@ public class PocketClient {
             public void onOpen(WebSocket ws, Response response) {
                 connected = true;
                 retryDelayMs = 1000L;
+                notifyConnection(true);
             }
 
             @Override
@@ -89,6 +104,7 @@ public class PocketClient {
             public void onClosed(WebSocket ws, int code, String reason) {
                 connected = false;
                 socket = null;
+                notifyConnection(false);
                 scheduleReconnect();
             }
 
@@ -96,9 +112,15 @@ public class PocketClient {
             public void onFailure(WebSocket ws, Throwable t, Response response) {
                 connected = false;
                 socket = null;
+                notifyConnection(false);
                 scheduleReconnect();
             }
         });
+    }
+
+    private static void notifyConnection(boolean on) {
+        ConnectionListener l = connectionListener;
+        if (l != null) l.onConnectionChanged(on);
     }
 
     private void scheduleReconnect() {
