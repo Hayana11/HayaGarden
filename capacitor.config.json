@@ -1,0 +1,14 @@
+{
+  "appId": "xyz.lovestyle.home",
+  "appName": "Elpis",
+  "webDir": "www",
+  "server": {
+    "url": "https://love-style.xyz",
+    "cleartext": false
+  },
+  "android": {
+    "allowMixedContent": false,
+    "captureInput": true,
+    "webContentsDebuggingEnabled": true
+  }
+}
