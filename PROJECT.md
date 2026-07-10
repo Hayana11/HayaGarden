@@ -141,7 +141,7 @@ apply-patches.sh 做了什么：
    - 后端存盘即可，返回 2xx。
 3. 已有：`POST /api/geo/report`、`POST /api/device/report`（含 `screen_today_minutes`）、
    `GET /api/dream/events`（AppTracker 上报）。
-4. **pocket-browser**（P1）：手机连 `wss://love-style.xyz/pocket/ws?token=...`。
+4. **pocket-browser**（P1）：手机连 `wss://love-style.xyz/pocket/ws`，握手头 `Authorization: Bearer <token>`。
    token 与 VPS `/opt/pocket/.env` 的 `POCKET_TOKEN` 相同。
    App 内写入：`adb shell run-as xyz.lovestyle.home` 或 SharedPreferences `elpis_pocket`：
    - `pocket_token` — 必填

@@ -17,7 +17,7 @@ import org.json.JSONObject;
 
 /**
  * pocket-browser 安卓侧客户端：OkHttp WebSocket + 现有 WebView 执行 5 个指令。
- * 协议与 Shitsuten/pocket-browser 完全兼容，服务端无需改动。
+ * WS 鉴权走 Authorization: Bearer（与 pocket-relay 一致）。
  */
 public class PocketClient {
 
@@ -64,9 +64,10 @@ public class PocketClient {
     }
 
     private void openSocket() {
-        String sep = serverWs.contains("?") ? "&" : "?";
-        String url = serverWs + sep + "token=" + token;
-        Request req = new Request.Builder().url(url).build();
+        Request req = new Request.Builder()
+                .url(serverWs)
+                .addHeader("Authorization", "Bearer " + token)
+                .build();
         socket = http.newWebSocket(req, new WebSocketListener() {
             @Override
             public void onOpen(WebSocket ws, Response response) {
