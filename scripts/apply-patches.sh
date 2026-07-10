@@ -15,6 +15,8 @@ cp scripts/ScreenCaptureService.java            "$PKG_DIR/ScreenCaptureService.j
 cp scripts/ScreenCapturePermissionActivity.java "$PKG_DIR/ScreenCapturePermissionActivity.java"
 cp scripts/PocketClient.java              "$PKG_DIR/PocketClient.java"
 cp scripts/PocketManager.java             "$PKG_DIR/PocketManager.java"
+cp scripts/PocketWebViewPolicy.java       "$PKG_DIR/PocketWebViewPolicy.java"
+cp scripts/PocketBrowserActivity.java     "$PKG_DIR/PocketBrowserActivity.java"
 
 # 2. 给 manifest 根元素加 xmlns:tools
 sed -i 's|xmlns:android="http://schemas.android.com/apk/res/android">|xmlns:android="http://schemas.android.com/apk/res/android"\n    xmlns:tools="http://schemas.android.com/tools">|' "$MANIFEST"
@@ -36,11 +38,12 @@ sed -i '/android.permission.INTERNET/a\
 # 4. WorkManager + OkHttp（pocket-browser WebSocket）
 sed -i '/implementation.*capacitor-android/a\    implementation "androidx.work:work-runtime:2.9.0"\n    implementation "com.squareup.okhttp3:okhttp:4.12.0"' android/app/build.gradle
 
-# 5. 组件声明：服务 / 截屏授权活动 / 开机自启广播，一次性插在 </application> 前
+# 5. 组件声明：服务 / 截屏授权活动 / Pocket 登录浏览器 / 开机自启广播，一次性插在 </application> 前
 sed -i 's|</application>|\
         <service android:name=".ForegroundService" android:foregroundServiceType="dataSync" />\
         <service android:name=".ScreenCaptureService" android:exported="false" android:foregroundServiceType="mediaProjection" />\
         <activity android:name=".ScreenCapturePermissionActivity" android:exported="false" android:theme="@android:style/Theme.Translucent.NoTitleBar" android:excludeFromRecents="true" />\
+        <activity android:name=".PocketBrowserActivity" android:exported="false" />\
         <receiver android:name=".BootReceiver" android:enabled="true" android:exported="true">\
             <intent-filter>\
                 <action android:name="android.intent.action.BOOT_COMPLETED" />\
