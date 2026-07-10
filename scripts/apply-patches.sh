@@ -38,7 +38,29 @@ sed -i '/android.permission.INTERNET/a\
 # 4. WorkManager + OkHttp（pocket-browser WebSocket）
 sed -i '/implementation.*capacitor-android/a\    implementation "androidx.work:work-runtime:2.9.0"\n    implementation "com.squareup.okhttp3:okhttp:4.12.0"' android/app/build.gradle
 
-# 5. 组件声明：服务 / 截屏授权活动 / Pocket 登录浏览器 / 开机自启广播，一次性插在 </application> 前
+# 5. 固定 debug 签名。GitHub runner 每次生成的默认 debug.keystore 不同，会导致 APK 无法覆盖安装。
+base64 -d scripts/elpis-debug.p12.b64 > android/app/elpis-debug.p12
+cat >> android/app/build.gradle <<'GRADLE'
+
+android {
+    signingConfigs {
+        elpisDebug {
+            storeFile file('elpis-debug.p12')
+            storeType 'PKCS12'
+            storePassword 'elpisdebug'
+            keyAlias 'elpisdebug'
+            keyPassword 'elpisdebug'
+        }
+    }
+    buildTypes {
+        debug {
+            signingConfig signingConfigs.elpisDebug
+        }
+    }
+}
+GRADLE
+
+# 6. 组件声明：服务 / 截屏授权活动 / Pocket 登录浏览器 / 开机自启广播，一次性插在 </application> 前
 sed -i 's|</application>|\
         <service android:name=".ForegroundService" android:foregroundServiceType="dataSync" />\
         <service android:name=".ScreenCaptureService" android:exported="false" android:foregroundServiceType="mediaProjection" />\
