@@ -146,6 +146,17 @@ public class NativeBridge {
         return PocketManager.get(ctx).getStatusJson();
     }
 
+    /** 打开不注入原生桥的 Pocket 登录浏览器，供淘宝/微博等外站保存 WebView cookies。 */
+    @JavascriptInterface
+    public void openPocketBrowser(String url) {
+        try {
+            Intent i = new Intent(ctx, PocketBrowserActivity.class);
+            i.putExtra("url", PocketWebViewPolicy.normalizeUrl(url));
+            i.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            ctx.startActivity(i);
+        } catch (Exception ignored) {}
+    }
+
     // ── 截屏 ──────────────────────────────────────────────────
     /** 前端主动触发一次截屏（需已授权投屏，否则会拉起授权框） */
     @JavascriptInterface
