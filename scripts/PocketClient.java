@@ -201,7 +201,7 @@ public class PocketClient {
 
     private static String unwrapJs(String value) {
         // evaluateJavascript 的返回值是一个合法 JSON 值（带引号字符串/数字/对象…），
-        // 手工替换转义序列会漏 \\、\t、\uXXXX——直接按 JSON 解析。
+        // 手工替换转义序列会漏反斜杠、tab、Unicode 转义——直接按 JSON 解析。
         if (value == null || "null".equals(value)) return "";
         try {
             Object v = new JSONTokener(value).nextValue();
