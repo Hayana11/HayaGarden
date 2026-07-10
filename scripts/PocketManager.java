@@ -4,6 +4,7 @@ import android.content.Context;
 import android.content.SharedPreferences;
 import android.os.Handler;
 import android.os.Looper;
+import android.view.View;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 
@@ -13,6 +14,12 @@ import android.webkit.WebView;
  * 外站页面不可触达 setPocketConfig / 截屏 / 权限等原生桥。
  */
 public final class PocketManager {
+
+    // 离屏 WebView 的虚拟画布尺寸（常见手机竖屏比例）。
+    // 这个 WebView 永不进视图树，系统不会给它布局；不手动 measure/layout
+    // 宽高恒为 0——loadUrl/JS 能跑，但 draw() 画不出内容，screenshot 必失败。
+    private static final int OFFSCREEN_W = 1080;
+    private static final int OFFSCREEN_H = 2340;
 
     private static PocketManager instance;
     private final Context appContext;
@@ -73,6 +80,10 @@ public final class PocketManager {
         s.setJavaScriptEnabled(true);
         s.setDomStorageEnabled(true);
         // 故意不 addJavascriptInterface —— 外站 cookie/登录态在此 WebView，但碰不到原生桥
+        pocketWebView.measure(
+                View.MeasureSpec.makeMeasureSpec(OFFSCREEN_W, View.MeasureSpec.EXACTLY),
+                View.MeasureSpec.makeMeasureSpec(OFFSCREEN_H, View.MeasureSpec.EXACTLY));
+        pocketWebView.layout(0, 0, OFFSCREEN_W, OFFSCREEN_H);
         pocketWebView.loadUrl("about:blank");
     }
 
