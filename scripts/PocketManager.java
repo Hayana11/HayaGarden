@@ -5,7 +5,6 @@ import android.content.SharedPreferences;
 import android.os.Handler;
 import android.os.Looper;
 import android.view.View;
-import android.webkit.WebSettings;
 import android.webkit.WebView;
 
 /**
@@ -76,9 +75,7 @@ public final class PocketManager {
     private void ensurePocketWebView() {
         if (pocketWebView != null) return;
         pocketWebView = new WebView(appContext);
-        WebSettings s = pocketWebView.getSettings();
-        s.setJavaScriptEnabled(true);
-        s.setDomStorageEnabled(true);
+        PocketWebViewPolicy.configure(pocketWebView);
         // 故意不 addJavascriptInterface —— 外站 cookie/登录态在此 WebView，但碰不到原生桥
         pocketWebView.measure(
                 View.MeasureSpec.makeMeasureSpec(OFFSCREEN_W, View.MeasureSpec.EXACTLY),
