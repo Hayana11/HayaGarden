@@ -9,7 +9,8 @@ import android.webkit.WebView;
 
 /**
  * 前台服务持有的 Pocket 生命周期：WS 连接不随 Activity 销毁而断。
- * Activity 在时优先用可见 WebView；划掉后 fallback WebView 继续执行指令。
+ * 永远使用专用 WebView（不注入 ElpisNative），与主 App WebView 隔离——
+ * 外站页面不可触达 setPocketConfig / 截屏 / 权限等原生桥。
  */
 public final class PocketManager {
 
@@ -18,8 +19,7 @@ public final class PocketManager {
     private final Handler main = new Handler(Looper.getMainLooper());
 
     private PocketClient client;
-    private WebView activityWebView;
-    private WebView fallbackWebView;
+    private WebView pocketWebView;
 
     private PocketManager(Context ctx) {
         this.appContext = ctx.getApplicationContext();
@@ -35,24 +35,6 @@ public final class PocketManager {
     /** ForegroundService / 开机自启时调用 */
     public void start() {
         main.post(this::ensureConnected);
-    }
-
-    public void attachActivityWebView(WebView wv) {
-        main.post(() -> {
-            activityWebView = wv;
-            if (client != null) {
-                client.setWebView(activeWebView());
-            }
-        });
-    }
-
-    public void detachActivityWebView() {
-        main.post(() -> {
-            activityWebView = null;
-            if (client != null) {
-                client.setWebView(activeWebView());
-            }
-        });
     }
 
     public void reloadConfig() {
@@ -76,7 +58,7 @@ public final class PocketManager {
             org.json.JSONObject j = new org.json.JSONObject();
             j.put("connected", PocketClient.isConnected());
             j.put("has_token", token != null && !token.isEmpty());
-            j.put("using_activity_webview", activityWebView != null);
+            j.put("dedicated_webview", pocketWebView != null);
             j.put("ws", sp.getString("pocket_ws", "wss://love-style.xyz/pocket/ws"));
             return j.toString();
         } catch (Exception e) {
@@ -84,19 +66,14 @@ public final class PocketManager {
         }
     }
 
-    private void ensureFallbackWebView() {
-        if (fallbackWebView != null) return;
-        fallbackWebView = new WebView(appContext);
-        WebSettings s = fallbackWebView.getSettings();
+    private void ensurePocketWebView() {
+        if (pocketWebView != null) return;
+        pocketWebView = new WebView(appContext);
+        WebSettings s = pocketWebView.getSettings();
         s.setJavaScriptEnabled(true);
         s.setDomStorageEnabled(true);
-        fallbackWebView.loadUrl("about:blank");
-    }
-
-    private WebView activeWebView() {
-        if (activityWebView != null) return activityWebView;
-        ensureFallbackWebView();
-        return fallbackWebView;
+        // 故意不 addJavascriptInterface —— 外站 cookie/登录态在此 WebView，但碰不到原生桥
+        pocketWebView.loadUrl("about:blank");
     }
 
     private void ensureConnected() {
@@ -105,13 +82,12 @@ public final class PocketManager {
         if (token == null || token.isEmpty()) return;
 
         String ws = sp.getString("pocket_ws", "wss://love-style.xyz/pocket/ws");
-        ensureFallbackWebView();
-        WebView wv = activeWebView();
+        ensurePocketWebView();
         if (client == null) {
-            client = new PocketClient(wv, ws, token);
+            client = new PocketClient(pocketWebView, ws, token);
             client.connect();
         } else {
-            client.setWebView(wv);
+            client.setWebView(pocketWebView);
         }
     }
 }

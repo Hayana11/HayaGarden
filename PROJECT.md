@@ -104,7 +104,7 @@ apply-patches.sh 做了什么：
 | 推送通知（兜底） | `NotificationWorker.java` | WorkManager 15min 轮询，长轮询被杀时补网 |
 | 截屏 | `ScreenCaptureService.java` | MediaProjection 常驻，收到 `screenshot` 命令或 JS 调用即抓帧上传；**非静默**：常驻"共享中·可关闭"通知 + 每次截屏弹"看了你屏幕一眼·HH:mm" |
 | 后台保活 | `ForegroundService` + `NativeBridge` | 前台服务 + Doze 白名单 + 开机自启 + onTaskRemoved 重启 |
-| Pocket 远程眼 | `PocketClient.java` | OkHttp WebSocket 连 `wss://love-style.xyz/pocket/ws`，5 指令 + 指数退避重连 |
+| Pocket 远程眼 | `PocketClient.java` + `PocketManager.java` | 专用 WebView（**无 ElpisNative**）+ OkHttp WS；主 WebView 仅用于 love-style.xyz / pocket-settings |
 | JS 桥 | `NativeBridge.java` | `window.ElpisNative.*`（见下方 JS API） |
 
 ### `window.ElpisNative` JS API（WebView 内可直接调用）
@@ -144,7 +144,7 @@ apply-patches.sh 做了什么：
 4. **pocket-browser**（P1）：手机连 `wss://love-style.xyz/pocket/ws`，握手头 `Authorization: Bearer <token>`。
    token 与 VPS `/opt/pocket/.env` 的 `POCKET_TOKEN` 相同。
    **App 内设置页**：`https://love-style.xyz/pocket-settings.html`（调用 `ElpisNative.setPocketConfig` / `getPocketStatus`）。
-   Pocket WS 由 **ForegroundService → PocketManager** 持有，Activity 划掉后仍在线（fallback WebView）。
+   Pocket WS 由 **ForegroundService → PocketManager** 持有；goto/js/html/screenshot 在**专用 WebView**执行，与注入 ElpisNative 的主 WebView 隔离。
 
 ---
 

@@ -29,7 +29,6 @@ public class MainActivity extends BridgeActivity {
         if (wv != null) {
             wv.getSettings().setTextZoom(90);
             wv.addJavascriptInterface(new NativeBridge(getApplicationContext()), "ElpisNative");
-            PocketManager.get(this).attachActivityWebView(wv);
         }
 
         // UsageStats 应用追踪（屏幕时间也靠它）——没授权就显式拉起设置页
@@ -136,10 +135,6 @@ public class MainActivity extends BridgeActivity {
     @Override
     public void onResume() {
         super.onResume();
-        android.webkit.WebView wv = getBridge().getWebView();
-        if (wv != null) {
-            PocketManager.get(this).attachActivityWebView(wv);
-        }
         // 用户可能刚从设置页授予了 UsageStats，回到 app 时补启动追踪
         if (tracker != null && tracker.hasPermission()) {
             tracker.start();
@@ -160,7 +155,6 @@ public class MainActivity extends BridgeActivity {
     @Override
     public void onDestroy() {
         super.onDestroy();
-        PocketManager.get(this).detachActivityWebView();
         if (tracker != null) tracker.stop();
     }
 }

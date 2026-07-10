@@ -16,8 +16,8 @@ import okhttp3.WebSocketListener;
 import org.json.JSONObject;
 
 /**
- * pocket-browser 安卓侧客户端：OkHttp WebSocket + 现有 WebView 执行 5 个指令。
- * WS 鉴权走 Authorization: Bearer（与 pocket-relay 一致）。
+ * pocket-browser 安卓侧客户端：OkHttp WebSocket + 专用 WebView 执行 5 个指令。
+ * WS 鉴权走 Authorization: Bearer。WebView 由 PocketManager 提供，不含原生桥。
  */
 public class PocketClient {
 
