@@ -180,12 +180,15 @@ public class PocketClient {
 
     private void captureAndReply(WebSocket ws, String id) {
         try {
+            PocketManager.layoutOffscreen(webView);
             int w = webView.getWidth();
             int h = webView.getHeight();
             if (w <= 0 || h <= 0) {
                 reply(ws, id, false, null, "webview not laid out");
                 return;
             }
+            // 离屏 WebView 在部分机型上需软件层才能 draw 出像素
+            webView.setLayerType(android.view.View.LAYER_TYPE_SOFTWARE, null);
             Bitmap bmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888);
             Canvas canvas = new Canvas(bmp);
             webView.draw(canvas);

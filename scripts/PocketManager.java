@@ -4,6 +4,8 @@ import android.content.Context;
 import android.content.SharedPreferences;
 import android.os.Handler;
 import android.os.Looper;
+import android.util.DisplayMetrics;
+import android.view.View;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 
@@ -73,7 +75,26 @@ public final class PocketManager {
         s.setJavaScriptEnabled(true);
         s.setDomStorageEnabled(true);
         // 故意不 addJavascriptInterface —— 外站 cookie/登录态在此 WebView，但碰不到原生桥
+        layoutOffscreen(pocketWebView);
         pocketWebView.loadUrl("about:blank");
+    }
+
+    static {
+        try {
+            WebView.enableSlowWholeDocumentDraw();
+        } catch (Throwable ignored) {}
+    }
+
+    /** 离屏 WebView 无 View 树，需手动 measure/layout 后 draw() 才能截图 */
+    static void layoutOffscreen(WebView wv) {
+        if (wv == null) return;
+        DisplayMetrics dm = wv.getContext().getResources().getDisplayMetrics();
+        int w = Math.max(dm.widthPixels, 360);
+        int h = Math.max(dm.heightPixels, 640);
+        wv.measure(
+                View.MeasureSpec.makeMeasureSpec(w, View.MeasureSpec.EXACTLY),
+                View.MeasureSpec.makeMeasureSpec(h, View.MeasureSpec.EXACTLY));
+        wv.layout(0, 0, w, h);
     }
 
     private void ensureConnected() {
