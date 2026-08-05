@@ -1,34 +1,14 @@
-name: Build APK
+name: Build Canary APK
 
 on:
   push:
     branches:
-      - main
-      - 'claude/**'
-      - 'cursor/**'
-    paths:
-      # App 加载的是远程网页（capacitor.config.json 的 server.url），
-      # 前端/后端代码改动不需要重新打包 APK。只有下面这些原生层相关
-      # 的文件变了，才需要重新触发构建。
-      - 'capacitor.config.json'
-      - 'package.json'
-      - 'package-lock.json'
-      - 'assets/**'
-      - 'scripts/**'
-      - 'www/**'
-      - '.github/workflows/build-apk.yml'
+      - claude/app-shell-reset-pure
+      - 'claude/app-shell-reset-pure/**'
   workflow_dispatch:
   pull_request:
     branches:
       - main
-    paths:
-      - 'capacitor.config.json'
-      - 'package.json'
-      - 'package-lock.json'
-      - 'assets/**'
-      - 'scripts/**'
-      - 'www/**'
-      - '.github/workflows/build-apk.yml'
 
 jobs:
   build:
@@ -43,13 +23,13 @@ jobs:
           node-version: '20'
 
       - name: Install npm deps
-        run: npm install
+        run: npm ci
 
-      - name: Setup JDK 17
+      - name: Setup JDK 21
         uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
-          java-version: '17'
+          java-version: '21'
 
       - name: Accept Android SDK licenses
         run: yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses || true
@@ -57,23 +37,23 @@ jobs:
       - name: Add Android platform
         run: npx cap add android
 
+      - name: Sync Capacitor
+        run: npx cap sync android
+
       - name: Generate app icons
         run: |
           if [ -f assets/icon.png ]; then
-            npx @capacitor/assets generate --iconBackgroundColor '#FAF6F1' --iconBackgroundColorDark '#FAF6F1' --android
+            npx @capacitor/assets generate --iconBackgroundColor '#FAF6F1' --iconBackgroundColorDark '#FAF6F1' --android || echo "icon generation skipped"
           else
-            echo "assets/icon.png not found, skipping icon generation (using Capacitor default)"
+            echo "assets/icon.png not found, using Capacitor default icons"
           fi
 
-      - name: Apply native patches
-        run: bash scripts/apply-patches.sh
-
       - name: Build debug APK
-        run: cd android && chmod +x gradlew && ./gradlew assembleDebug --no-daemon
+        run: cd android && chmod +x gradlew && ./gradlew clean assembleDebug --no-daemon
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Elpis-debug-${{ github.run_number }}
+          name: Elpis-Canary-pure-webview-${{ github.run_number }}
           path: android/app/build/outputs/apk/debug/app-debug.apk
           retention-days: 30

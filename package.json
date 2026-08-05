@@ -1,16 +1,16 @@
 {
-  "name": "elpis-app",
+  "name": "elpis-canary",
   "version": "1.0.0",
-  "description": "Elpis — WebView shell for love-style.xyz",
+  "description": "Elpis Canary — pure Capacitor WebView shell for love-style.xyz",
   "scripts": {
-    "build": "echo 'no local build needed'"
+    "build": "echo 'no local web build needed'"
   },
   "dependencies": {
-    "@capacitor/android": "^6.0.0",
-    "@capacitor/core": "^6.0.0"
+    "@capacitor/android": "8.5.0",
+    "@capacitor/core": "8.5.0"
   },
   "devDependencies": {
     "@capacitor/assets": "^3.0.0",
-    "@capacitor/cli": "^6.0.0"
+    "@capacitor/cli": "8.5.0"
   }
 }
