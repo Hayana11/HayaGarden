@@ -30,8 +30,9 @@ bash scripts/apply-p1-navigation.sh
 cd android && ./gradlew clean assembleDebug
 ```
 
-`scripts/apply-p1-navigation.sh` **只**覆盖 `MainActivity.java`，不是旧的
-`apply-patches.sh`。
+`scripts/apply-p1-navigation.sh` 覆盖 `MainActivity.java`，并把 CI/debug APK
+绑定到仓库内固定的 `elpis-debug.p12`（`scripts/elpis-debug.p12.b64`），避免
+runner 默认 debug 证书每次不同导致无法覆盖安装。不是旧的 `apply-patches.sh`。
 
 ## 明确不包含
 

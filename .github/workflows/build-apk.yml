@@ -42,7 +42,7 @@ jobs:
       - name: Sync Capacitor
         run: npx cap sync android
 
-      - name: Apply P1 navigation MainActivity only
+      - name: Apply P1 navigation + stable debug signing
         run: bash scripts/apply-p1-navigation.sh
 
       - name: Generate app icons
