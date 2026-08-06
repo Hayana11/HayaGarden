@@ -1,66 +1,41 @@
-# HayaGarden — App Shell Reset P0 (Pure WebView Canary)
+# HayaGarden — App Shell Reset P1 (Navigation + Lifecycle Baseline)
 
 ## 这是什么
 
-**实验分支** `claude/app-shell-reset-pure`：最小化 Capacitor Android WebView 壳。
+实验分支 `claude/app-shell-reset-p1-navigation`，从 Phase 0 纯壳
+`claude/app-shell-reset-pure` 分出。
 
-唯一行为：启动后加载 `https://love-style.xyz`。
-
-用于验证页面变形、点击失效、IME/光标异常是否来自旧原生壳。**不是**正式 App，**不**迁入旧原生能力。
-
-| | 正式 `main` | 本 canary |
+| | Phase 0 pure | Phase 1B |
 |---|---|---|
-| appId | `xyz.lovestyle.home` | `xyz.lovestyle.home.canary` |
-| appName | Elpis | Elpis Canary |
-| Capacitor | 6 + 大量 patch | 8.5.0 官方生成壳 |
-| 原生能力 | 推送/GPS/截屏/桥等 | **无** |
+| appId | `xyz.lovestyle.home.canary` | 同左 |
+| Capacitor | 8.5.0 | 同左 |
+| server.url | `https://love-style.xyz` | 同左 |
+| 自定义原生 | 无 | **仅** Android back（OnBackPressedDispatcher） |
+| 旧原生能力 | 禁止 | 继续禁止 |
 
----
+## 行为
 
-## 目录
+1. WebView → `https://love-style.xyz`
+2. Android 返回：有 WebView history → `goBack()`；否则交给系统退出
+3. 生命周期：使用 Capacitor `BridgeActivity` 默认（pause/resume **不** reload / 不 reset URL）
+4. 外链：Capacitor `Bridge.launchIntent` 默认 —— 同 host 留在 WebView，其它 http(s) → `ACTION_VIEW`
 
-```
-HayaGarden/
-├── capacitor.config.json   # appId canary + server.url
-├── package.json            # @capacitor/* 8.5.0
-├── www/index.html          # 离线兜底占位
-├── assets/icon.png         # 可选图标
-└── .github/workflows/build-apk.yml
-```
-
-`android/` 由 CI / 本地 `npx cap add android` 生成，不入库。
-
-**已删除**：`scripts/*.java`、`apply-patches.sh`、以及所有旧原生注入。
-
----
-
-## 本地构建
+## 构建
 
 ```bash
 npm ci
-npx cap add android
+npx cap add android   # 或复用已有 android/
 npx cap sync android
+bash scripts/apply-p1-navigation.sh
 cd android && ./gradlew clean assembleDebug
-# APK: android/app/build/outputs/apk/debug/app-debug.apk
 ```
 
-需要 Android SDK + JDK（Capacitor 8 推荐 JDK 21）。
-
----
-
-## CI
-
-push / PR 到本分支相关路径时构建 debug APK，artifact：
-
-`Elpis-Canary-pure-webview-<run_number>`
-
-不签正式包，不用正式 keystore。
-
----
+`scripts/apply-p1-navigation.sh` 覆盖 `MainActivity.java`，并把 CI/debug APK
+绑定到仓库内固定的 `elpis-debug.p12`（`scripts/elpis-debug.p12.b64`），避免
+runner 默认 debug 证书每次不同导致无法覆盖安装。不是旧的 `apply-patches.sh`。
 
 ## 明确不包含
 
-ForegroundService、NotificationWorker、WorkManager 自定义轮询、FCM、Local Notifications、
-Pocket*、AppTracker、UsageStats、GPS、ScreenCapture / MediaProjection、BootReceiver、
-NativeBridge / `window.ElpisNative`、Doze 白名单、开机自启、启动权限申请、
-`setTextZoom`、自定义 JS interface、`captureInput`、任何 WebView/键盘/viewport hack。
+ForegroundService、NotificationWorker、Pocket*、AppTracker、ScreenCapture、
+NativeBridge / ElpisNative、BootReceiver、FCM、textZoom、captureInput、
+keyboard/viewport hacks、自定义 WebViewClient。
