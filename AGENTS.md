@@ -1,14 +1,16 @@
-# AGENTS.md — HayaGarden (Canary branch)
+# AGENTS.md — HayaGarden (P1 navigation canary)
 
-`HayaGarden` on branch `claude/app-shell-reset-pure` is a **pure Capacitor 8 Android WebView
-canary** (app id `xyz.lovestyle.home.canary`). It loads `https://love-style.xyz` and must not
-include any former native patches (push, geo, screenshot, bridges, etc.).
+Branch `claude/app-shell-reset-p1-navigation` is a **Capacitor 8 pure WebView canary**
+plus minimal Android back handling (`native/MainActivity.java` via
+`scripts/apply-p1-navigation.sh`).
 
-Technical docs: `PROJECT.md`. The `CLAUDE.md` is persona roleplay, not technical docs.
+Do **not** restore Phase-0-forbidden native capabilities. Do **not** merge/deploy
+from agent automation unless the user explicitly requests it for a later phase.
 
-## Cursor Cloud specific instructions
+## Build
 
-- Deliverable is a debug APK. Web product lives in `hayagarden-frontend` (do not modify from here).
-- `npm ci` then `npx cap add android` + `npx cap sync android` + `./gradlew assembleDebug`.
-- There is **no** `scripts/apply-patches.sh` on this branch — do not restore old native injection.
-- Android SDK may need to be installed locally for assembleDebug; CI builds APK artifacts.
+```bash
+npm ci && npx cap add android && npx cap sync android
+bash scripts/apply-p1-navigation.sh
+cd android && ./gradlew clean assembleDebug
+```
