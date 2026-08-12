@@ -104,7 +104,7 @@ public final class NotificationSupport {
                 ? 0xE1F15 : messageId.hashCode();
 
         NotificationCompat.Builder builder = new NotificationCompat.Builder(ctx, CHANNEL_ID)
-                .setSmallIcon(android.R.drawable.ic_dialog_email)
+                .setSmallIcon(R.drawable.ic_elpis_notification_cat)
                 .setContentTitle(displayTitle)
                 .setContentText(displayBody)
                 .setStyle(new NotificationCompat.BigTextStyle().bigText(displayBody))

@@ -10,7 +10,8 @@ MANIFEST="$ROOT/android/app/src/main/AndroidManifest.xml"
 GRADLE="$ROOT/android/app/build.gradle"
 
 for required in "$P2A" "$NATIVE/NotificationSupport.java" \
-                "$NATIVE/NotificationPollWorker.java" "$NATIVE/NotificationBridge.java"; do
+                "$NATIVE/NotificationPollWorker.java" "$NATIVE/NotificationBridge.java" \
+                "$NATIVE/drawable/ic_elpis_notification_cat.xml"; do
   if [[ ! -f "$required" ]]; then
     echo "missing $required" >&2
     exit 1
@@ -23,7 +24,9 @@ fi
 
 bash "$P2A"
 
-mkdir -p "$DEST_DIR"
+RES_DIR="$ROOT/android/app/src/main/res/drawable"
+mkdir -p "$DEST_DIR" "$RES_DIR"
+cp "$NATIVE/drawable/ic_elpis_notification_cat.xml" "$RES_DIR/ic_elpis_notification_cat.xml"
 cp "$NATIVE/NotificationSupport.java" "$DEST_DIR/NotificationSupport.java"
 cp "$NATIVE/NotificationPollWorker.java" "$DEST_DIR/NotificationPollWorker.java"
 cp "$NATIVE/NotificationBridge.java" "$DEST_DIR/NotificationBridge.java"
