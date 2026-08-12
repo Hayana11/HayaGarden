@@ -6,7 +6,6 @@ on:
       - claude/app-shell-reset-pure
       - 'claude/app-shell-reset-pure/**'
       - claude/app-shell-reset-p1-navigation
-      - claude/app-shell-p2a-nativebridge-lite
       - 'claude/app-shell-reset-p1-navigation/**'
       - claude/app-shell-p2a-nativebridge-lite
       - 'claude/app-shell-p2a-nativebridge-lite/**'
@@ -17,6 +16,7 @@ on:
     branches:
       - main
       - claude/app-shell-reset-p1-navigation
+      - claude/app-shell-p2a-nativebridge-lite
 
 jobs:
   build:
