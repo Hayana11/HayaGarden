@@ -11,6 +11,7 @@ on:
       - 'claude/app-shell-p2a-nativebridge-lite/**'
       - claude/app-shell-p2b-native-notifications
       - 'claude/app-shell-p2b-native-notifications/**'
+      - claude/p2b1-notification-icon-polish
   workflow_dispatch:
   pull_request:
     branches:
