@@ -24,7 +24,7 @@ public final class NotificationSupport {
     public static final String WORK_NAME = "poll_fyodor";
     public static final String API =
             "https://love-style.xyz/api/wake_log/pending_notification";
-    public static final String CHAT_URL = "https://love-style.xyz/chat";
+    public static final String CHAT_URL = "https://love-style.xyz/dash/chat";
     public static final String EXTRA_OPEN_CHAT = "elpis.notification.open_chat";
     public static final int REQUEST_NOTIFICATION_PERMISSION = 2001;
     private static final String DEFAULT_TITLE = "费奥多尔";

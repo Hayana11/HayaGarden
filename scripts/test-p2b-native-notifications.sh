@@ -81,7 +81,7 @@ else
   pass "no custom foreground service or receiver"
 fi
 
-for token in 'CHANNEL_ID = "fyodor_msg"' 'CHANNEL_NAME = "费奥多尔的消息"' 'WORK_NAME = "poll_fyodor"' 'PeriodicWorkRequest' '15, TimeUnit.MINUTES' 'NetworkType.CONNECTED' 'ExistingPeriodicWorkPolicy.KEEP'; do
+for token in 'CHANNEL_ID = "fyodor_msg"' 'CHANNEL_NAME = "费奥多尔的消息"' 'WORK_NAME = "poll_fyodor"' 'CHAT_URL = "https://love-style.xyz/dash/chat"' 'PeriodicWorkRequest' '15, TimeUnit.MINUTES' 'NetworkType.CONNECTED' 'ExistingPeriodicWorkPolicy.KEEP'; do
   grep -qF "$token" "$SUPPORT" && pass "notification contract has $token" || fail "missing $token"
 done
 grep -qF 'EXTRA_OPEN_CHAT' "$SUPPORT" && grep -qF 'handleNotificationIntent' "$MAIN" \
