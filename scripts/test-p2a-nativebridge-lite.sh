@@ -118,6 +118,65 @@ for bad in setTextZoom startForegroundService requestPermissions AppTracker \
   fi
 done
 
+# ── F2. Usage Access / getScreenTime error classification (narrow) ─
+# hasUsageAccess: MODE_ALLOWED only; must NOT probe recent usage records.
+if grep -q 'MODE_ALLOWED' "$NB" && grep -q 'OPSTR_GET_USAGE_STATS' "$NB"; then
+  pass "hasUsageAccess gates on MODE_ALLOWED + OPSTR_GET_USAGE_STATS"
+else
+  fail "hasUsageAccess must use AppOps MODE_ALLOWED for OPSTR_GET_USAGE_STATS"
+fi
+# Extract hasUsageAccess body only — forbid 60s probe / non-empty query gate there.
+HAS_BODY="$(awk '/public boolean hasUsageAccess\(/,/^    \}$/' "$NB")"
+if printf '%s\n' "$HAS_BODY" | grep -qE '60_000|60000'; then
+  fail "hasUsageAccess must not probe last-minute usage window"
+else
+  pass "hasUsageAccess does not use 60s usage probe"
+fi
+if printf '%s\n' "$HAS_BODY" | grep -q 'queryUsageStats'; then
+  fail "hasUsageAccess must not call queryUsageStats"
+else
+  pass "hasUsageAccess does not call queryUsageStats"
+fi
+if printf '%s\n' "$HAS_BODY" | grep -q 'MODE_ERRORED'; then
+  fail "hasUsageAccess must not use MODE_ERRORED special-case; only MODE_ALLOWED"
+else
+  pass "hasUsageAccess has no MODE_ERRORED special-case"
+fi
+
+# getScreenTime: permission check first; null => unavailable; empty => 0+[]
+GST_BODY="$(awk '/public String getScreenTime\(/,/^    \}$/' "$NB")"
+if printf '%s\n' "$GST_BODY" | grep -q 'hasUsageAccess()'; then
+  pass "getScreenTime checks hasUsageAccess()"
+else
+  fail "getScreenTime must call hasUsageAccess() first"
+fi
+if printf '%s\n' "$GST_BODY" | grep -q 'no_permission'; then
+  pass "getScreenTime returns no_permission when unauthorized"
+else
+  fail "getScreenTime missing no_permission path"
+fi
+# empty-but-authorized must return 0 + [], not no_permission
+if printf '%s\n' "$GST_BODY" | grep -qF '{\"totalMinutes\":0,\"apps\":[]}'; then
+  pass "getScreenTime empty-authorized returns totalMinutes:0 apps:[]"
+else
+  fail "getScreenTime must return {totalMinutes:0,apps:[]} when authorized+empty"
+fi
+# null stats => unavailable (not collapsed into no_permission via isEmpty)
+if printf '%s\n' "$GST_BODY" | grep -q 'stats == null' \
+   && printf '%s\n' "$GST_BODY" | grep -q 'unavailable'; then
+  pass "getScreenTime separates null stats as unavailable"
+else
+  fail "getScreenTime must treat null queryUsageStats as unavailable"
+fi
+# Must not treat empty as no_permission anymore
+if printf '%s\n' "$GST_BODY" | grep -E 'stats == null \|\| stats\.isEmpty\(\)|stats\.isEmpty\(\) \|\| stats == null' | grep -q 'no_permission'; then
+  fail "getScreenTime must not map empty stats to no_permission"
+elif printf '%s\n' "$GST_BODY" | grep -qF 'stats == null || stats.isEmpty()'; then
+  fail "getScreenTime must not collapse null/empty into one branch"
+else
+  pass "getScreenTime does not collapse null/empty into no_permission"
+fi
+
 # ── G/H. Generated manifest (if android/ present) ────────────────
 if [[ -f "$MANIFEST" ]]; then
   for need in INTERNET PACKAGE_USAGE_STATS REQUEST_IGNORE_BATTERY_OPTIMIZATIONS; do

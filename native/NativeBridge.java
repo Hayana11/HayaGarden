@@ -67,6 +67,10 @@ public class NativeBridge {
     @JavascriptInterface
     public String getScreenTime() {
         try {
+            if (!hasUsageAccess()) {
+                return "{\"error\":\"no_permission\"}";
+            }
+
             UsageStatsManager usm = (UsageStatsManager)
                 ctx.getSystemService(Context.USAGE_STATS_SERVICE);
             if (usm == null) return "{\"error\":\"unavailable\"}";
@@ -82,8 +86,11 @@ public class NativeBridge {
                 cal.getTimeInMillis(),
                 System.currentTimeMillis());
 
-            if (stats == null || stats.isEmpty()) {
-                return "{\"error\":\"no_permission\"}";
+            if (stats == null) {
+                return "{\"error\":\"unavailable\"}";
+            }
+            if (stats.isEmpty()) {
+                return "{\"totalMinutes\":0,\"apps\":[]}";
             }
 
             PackageManager pm = ctx.getPackageManager();
@@ -134,13 +141,7 @@ public class NativeBridge {
             AppOpsManager aom = (AppOpsManager) ctx.getSystemService(Context.APP_OPS_SERVICE);
             int mode = aom.checkOpNoThrow(AppOpsManager.OPSTR_GET_USAGE_STATS,
                     android.os.Process.myUid(), ctx.getPackageName());
-            if (mode == AppOpsManager.MODE_ERRORED) return false;
-            long now = System.currentTimeMillis();
-            UsageStatsManager usm = (UsageStatsManager)
-                    ctx.getSystemService(Context.USAGE_STATS_SERVICE);
-            List<UsageStats> probe = usm.queryUsageStats(
-                    UsageStatsManager.INTERVAL_DAILY, now - 60_000L, now);
-            return probe != null && !probe.isEmpty();
+            return mode == AppOpsManager.MODE_ALLOWED;
         } catch (Exception e) {
             return false;
         }
