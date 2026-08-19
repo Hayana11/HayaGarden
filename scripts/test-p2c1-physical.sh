@@ -54,6 +54,13 @@ for token in 'Intent.ACTION_BATTERY_CHANGED' \
     || fail "battery contract missing $token"
 done
 
+grep -q 'if (batteryReceiverRegistered)' "$STORE" \
+  && pass "battery receiver has a registration guard" \
+  || fail "battery registration guard missing"
+grep -q '!batteryReceiverRegistered' "$STORE" \
+  && pass "battery receiver has an unregistration guard" \
+  || fail "battery unregistration guard missing"
+
 START_BLOCK="$(sed -n '/public void start()/,/public void stop()/p' "$STORE")"
 STOP_BLOCK="$(sed -n '/public void stop()/,/public Snapshot snapshot()/p' "$STORE")"
 printf '%s\n' "$START_BLOCK" | grep -q 'registerBatteryReceiverLocked' \
