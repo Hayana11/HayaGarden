@@ -1,6 +1,10 @@
 package xyz.lovestyle.home.canary;
 
+import android.content.BroadcastReceiver;
 import android.content.Context;
+import android.content.Intent;
+import android.content.IntentFilter;
+import android.hardware.BatteryManager;
 import android.hardware.Sensor;
 import android.hardware.SensorEvent;
 import android.hardware.SensorEventListener;
@@ -18,6 +22,7 @@ public final class PhysicalStateStore {
     private final Context context;
     private final SensorManager sensorManager;
     private final SensorEventListener listener;
+    private final BroadcastReceiver batteryReceiver;
 
     private final SensorState accelerometer = new SensorState(Sensor.TYPE_ACCELEROMETER);
     private final SensorState gyroscope = new SensorState(Sensor.TYPE_GYROSCOPE);
@@ -31,6 +36,7 @@ public final class PhysicalStateStore {
     private BatteryState battery = new BatteryState();
     // True only while foreground collection is active and SensorManager is available.
     private boolean monitoring;
+    private boolean batteryReceiverRegistered;
     private long latestSampledAt;
     private long updatedAt;
 
@@ -46,6 +52,13 @@ public final class PhysicalStateStore {
             @Override
             public void onAccuracyChanged(Sensor sensor, int accuracy) {
                 // Accuracy is intentionally outside the raw P2C.1 contract.
+            }
+        };
+
+        batteryReceiver = new BroadcastReceiver() {
+            @Override
+            public void onReceive(Context receiverContext, Intent intent) {
+                handleBatteryIntent(intent);
             }
         };
 
@@ -65,7 +78,7 @@ public final class PhysicalStateStore {
             }
 
             refreshAvailabilityLocked();
-            refreshBatteryLocked();
+            registerBatteryReceiverLocked();
             // monitoring means the foreground collection session is active;
             // without SensorManager there is no active collection infrastructure.
             monitoring = sensorManager != null;
@@ -93,6 +106,7 @@ public final class PhysicalStateStore {
                     sensorManager.unregisterListener(listener);
                 }
             } finally {
+                unregisterBatteryReceiverLocked();
                 monitoring = false;
                 updatedAt = System.currentTimeMillis();
             }
@@ -201,20 +215,64 @@ public final class PhysicalStateStore {
         }
     }
 
-    private void refreshBatteryLocked() {
-        BatteryState next = new BatteryState();
+    private void registerBatteryReceiverLocked() {
+        if (batteryReceiverRegistered) {
+            return;
+        }
+
         try {
-            JSONObject current = new JSONObject(new NativeBridge(context).getBattery());
-            int level = current.optInt("percent", -1);
-            if (level >= 0) {
-                next.available = true;
-                next.level = level;
-                next.charging = current.optBoolean("charging", false);
+            Intent sticky = context.registerReceiver(
+                    batteryReceiver,
+                    new IntentFilter(Intent.ACTION_BATTERY_CHANGED)
+            );
+            batteryReceiverRegistered = true;
+            handleBatteryIntentLocked(sticky);
+        } catch (RuntimeException ignored) {
+            batteryReceiverRegistered = false;
+            battery = new BatteryState();
+        }
+    }
+
+    private void unregisterBatteryReceiverLocked() {
+        if (!batteryReceiverRegistered) {
+            return;
+        }
+
+        try {
+            context.unregisterReceiver(batteryReceiver);
+        } finally {
+            batteryReceiverRegistered = false;
+        }
+    }
+
+    private void handleBatteryIntent(Intent intent) {
+        synchronized (lock) {
+            if (!batteryReceiverRegistered) {
+                return;
             }
-        } catch (Exception ignored) {
-            // Battery absence is represented by available=false.
+            handleBatteryIntentLocked(intent);
+        }
+    }
+
+    private void handleBatteryIntentLocked(Intent intent) {
+        BatteryState next = new BatteryState();
+        if (intent != null) {
+            int level = intent.getIntExtra(BatteryManager.EXTRA_LEVEL, -1);
+            int scale = intent.getIntExtra(BatteryManager.EXTRA_SCALE, -1);
+            int status = intent.getIntExtra(
+                    BatteryManager.EXTRA_STATUS,
+                    BatteryManager.BATTERY_STATUS_UNKNOWN
+            );
+            if (level >= 0 && scale > 0 && level <= scale) {
+                long percent = (level * 100L + (scale / 2L)) / scale;
+                next.available = true;
+                next.level = (int) Math.min(100L, percent);
+                next.charging = status == BatteryManager.BATTERY_STATUS_CHARGING
+                        || status == BatteryManager.BATTERY_STATUS_FULL;
+            }
         }
         battery = next;
+        updatedAt = System.currentTimeMillis();
     }
 
     static final class BatteryState {
