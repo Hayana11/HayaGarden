@@ -93,12 +93,9 @@ else
   fail "cannot evaluate permissions because AndroidManifest.xml is missing"
 fi
 
-for file in PhysicalStateStore.java PhysicalBridge.java; do
-  [[ -f "$GEN/$file" ]] && pass "generated $file exists" || fail "generated $file missing"
-done
-[[ -f "$GEN/MainActivity.java" ]] \
-  && pass "generated MainActivity exists" \
-  || fail "generated MainActivity missing"
+require_file "$GEN/MainActivity.java"
+require_file "$GEN/PhysicalBridge.java"
+require_file "$GEN/PhysicalStateStore.java"
 
 [[ "$FAIL" -eq 0 ]] || exit 1
 echo "P2C.1 foreground physical cache contract PASSED"
