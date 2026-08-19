@@ -19,6 +19,17 @@ for file in "$STORE" "$BRIDGE" "$MAIN"; do
   require_file "$file"
 done
 
+if grep -qF 'import android.os.BatteryManager;' "$STORE"; then
+  pass "PhysicalStateStore uses android.os.BatteryManager"
+else
+  fail "PhysicalStateStore must import android.os.BatteryManager"
+fi
+if grep -qF 'import android.hardware.BatteryManager;' "$STORE"; then
+  fail "PhysicalStateStore must not import android.hardware.BatteryManager"
+else
+  pass "PhysicalStateStore has no android.hardware.BatteryManager import"
+fi
+
 [[ "$(grep -c '@JavascriptInterface' "$BRIDGE")" -eq 1 ]] \
   && pass "ElpisPhysical exposes exactly one JS method" \
   || fail "ElpisPhysical must expose exactly one JS method"
