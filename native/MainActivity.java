@@ -65,7 +65,7 @@ public class MainActivity extends BridgeActivity {
     }
 
     @Override
-    protected void onResume() {
+    public void onResume() {
         super.onResume();
         if (physicalStateStore != null) {
             physicalStateStore.start();
@@ -73,7 +73,7 @@ public class MainActivity extends BridgeActivity {
     }
 
     @Override
-    protected void onPause() {
+    public void onPause() {
         if (physicalStateStore != null) {
             physicalStateStore.stop();
         }
