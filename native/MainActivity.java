@@ -11,12 +11,16 @@ import com.getcapacitor.BridgeActivity;
 
 /**
  * Phase 2C.1 Canary activity: P1B back semantics, P2A ElpisNative,
- * P2B notifications, and the narrow P2C.1 physical snapshot bridge.
+ * P2B notifications, and the foreground-live P2C.1 physical cache.
  */
 public class MainActivity extends BridgeActivity {
+    private PhysicalStateStore physicalStateStore;
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+
+        physicalStateStore = new PhysicalStateStore(getApplicationContext());
 
         Bridge bridge = getBridge();
         WebView webView = bridge != null ? bridge.getWebView() : null;
@@ -30,7 +34,7 @@ public class MainActivity extends BridgeActivity {
                 "ElpisNotifications"
             );
             webView.addJavascriptInterface(
-                new PhysicalBridge(getApplicationContext()),
+                new PhysicalBridge(physicalStateStore),
                 "ElpisPhysical"
             );
         }
@@ -58,6 +62,22 @@ public class MainActivity extends BridgeActivity {
                 }
             }
         );
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        if (physicalStateStore != null) {
+            physicalStateStore.start();
+        }
+    }
+
+    @Override
+    protected void onPause() {
+        if (physicalStateStore != null) {
+            physicalStateStore.stop();
+        }
+        super.onPause();
     }
 
     @Override

@@ -1,85 +1,99 @@
 #!/usr/bin/env bash
-# P2C.1 source and generated-tree contract locks.
+# P2C.1 foreground-live cache and generated-tree contract locks.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+STORE="$ROOT/native/PhysicalStateStore.java"
 BRIDGE="$ROOT/native/PhysicalBridge.java"
 MAIN="$ROOT/native/MainActivity.java"
-ANDROID_ROOT="${1:-$ROOT/android}"
+ANDROID_ROOT="\${1:-\$ROOT/android}"
 GEN="$ANDROID_ROOT/app/src/main/java/xyz/lovestyle/home/canary"
 MANIFEST="$ANDROID_ROOT/app/src/main/AndroidManifest.xml"
 FAIL=0
 
 pass() { echo "PASS: $*"; }
 fail() { echo "FAIL: $*" >&2; FAIL=1; }
+require_file() { [[ -f "$1" ]] && pass "present $1" || fail "missing $1"; }
 
-[[ -f "$BRIDGE" ]] && pass "PhysicalBridge source present" || fail "PhysicalBridge source missing"
-[[ "$(grep -c '@JavascriptInterface' "$BRIDGE")" -eq 1 ]] \
-  && pass "PhysicalBridge exposes one JS method" \
-  || fail "PhysicalBridge must expose exactly one JS method"
+for file in "$STORE" "$BRIDGE" "$MAIN"; do
+  require_file "$file"
+done
+
+[[ "\$(grep -c '@JavascriptInterface' "$BRIDGE")" -eq 1 ]] \
+  && pass "ElpisPhysical exposes exactly one JS method" \
+  || fail "ElpisPhysical must expose exactly one JS method"
 grep -q 'public String getPhysicalState()' "$BRIDGE" \
   && pass "getPhysicalState exists" || fail "getPhysicalState missing"
-grep -q 'schemaVersion' "$BRIDGE" \
-  && pass "schemaVersion is present" || fail "schemaVersion missing"
-grep -q 'sampledAt' "$BRIDGE" \
-  && pass "sampledAt is present" || fail "sampledAt missing"
-grep -q 'SNAPSHOT_TIMEOUT_MS = 1000L' "$BRIDGE" \
-  && pass "bounded 1000ms snapshot timeout" || fail "snapshot timeout missing"
 
-for token in TYPE_ACCELEROMETER TYPE_GYROSCOPE TYPE_PROXIMITY TYPE_LIGHT \
-             registerListener unregisterListener SENSOR_DELAY_NORMAL; do
-  grep -q "$token" "$BRIDGE" \
-    && pass "sensor source/lifecycle token $token" \
-    || fail "missing sensor/lifecycle token $token"
+if grep -Eq 'getLatestPhysicalState|startPhysicalMonitoring|stopPhysicalMonitoring|watchPhysicalState|nativeCommand|getRealityContext' "$BRIDGE"; then
+  fail "ElpisPhysical exposes a forbidden extra public surface"
+else
+  pass "ElpisPhysical public surface is narrow"
+fi
+
+for token in 'TYPE_ACCELEROMETER' 'TYPE_GYROSCOPE' 'TYPE_PROXIMITY' 'TYPE_LIGHT' \
+             'registerListener' 'unregisterListener' 'SENSOR_DELAY_NORMAL'; do
+  grep -q "$token" "$STORE" \
+    && pass "store contains $token" \
+    || fail "store missing $token"
 done
-grep -q 'CountDownLatch' "$BRIDGE" \
-  && pass "bounded batch wait" || fail "missing bounded batch wait"
-grep -q 'available.*false' "$BRIDGE" \
-  && pass "unavailable shape exists" || fail "missing unavailable shape"
+grep -q 'public void start()' "$STORE" \
+  && grep -q 'public void stop()' "$STORE" \
+  && pass "store owns start/stop" \
+  || fail "store start/stop missing"
+grep -q 'synchronized (lock)' "$STORE" \
+  && pass "store state access is synchronized" \
+  || fail "store synchronization missing"
 
-grep -q 'sample.type == Sensor.TYPE_LIGHT' "$BRIDGE" \
-  && pass "light branch is explicit" || fail "light branch missing"
-grep -q 'result.put("lux", values[0])' "$BRIDGE" \
-  && pass "light uses lux" || fail "light lux contract missing"
-grep -q 'sample.type == Sensor.TYPE_PROXIMITY' "$BRIDGE" \
-  && pass "proximity branch is explicit" || fail "proximity branch missing"
-grep -q 'result.put("value", values[0])' "$BRIDGE" \
-  && pass "proximity uses value" || fail "proximity value contract missing"
-grep -q 'result.put("maxRange", sample.sensor.getMaximumRange())' "$BRIDGE" \
-  && pass "proximity includes maxRange" || fail "proximity maxRange contract missing"
-
-LIGHT_BLOCK="$(sed -n '/sample.type == Sensor.TYPE_LIGHT/,/}/p' "$BRIDGE")"
-if grep -q 'result.put("value"' <<<"$LIGHT_BLOCK"; then
-  fail "light branch must not substitute value for lux"
+RESUME_BLOCK="$(sed -n '/protected void onResume/,/protected void onPause/p' "$MAIN")"
+PAUSE_BLOCK="$(sed -n '/protected void onPause/,/protected void onNewIntent/p' "$MAIN")"
+printf '%s\n' "$RESUME_BLOCK" | grep -q 'physicalStateStore.start()' \
+  && pass "onResume starts physical collection" \
+  || fail "onResume start hook missing"
+printf '%s\n' "$PAUSE_BLOCK" | grep -q 'physicalStateStore.stop()' \
+  && pass "onPause stops physical collection" \
+  || fail "onPause stop hook missing"
+if grep -Eq 'reload\(|clearCache|clearHistory' "$MAIN"; then
+  fail "MainActivity adds a WebView reload or cache reset"
 else
-  pass "light branch has no value substitution"
+  pass "MainActivity keeps no-reload lifecycle behavior"
 fi
 
-
-if grep -Eq 'ForegroundService|BootReceiver|WorkManager|AlarmManager|startService|startForeground|SharedPreferences|SQLite|HttpURLConnection|WebSocket|nativeCommand|executeNative|runCapability|requestPermissions|POST_NOTIFICATIONS|ACCESS_.*LOCATION|PACKAGE_USAGE_STATS' "$BRIDGE"; then
-  fail "PhysicalBridge contains forbidden capability or side effect"
+GETTER="$(awk '/public String getPhysicalState\(\)/,/^    \}/' "$BRIDGE")"
+if printf '%s\n' "$GETTER" | grep -Eq 'registerListener|unregisterListener|CountDownLatch|await|sleep|Timer|HttpURLConnection|WebSocket|SharedPreferences|SQLite|openConnection|getInputStream'; then
+  fail "getPhysicalState is not a read-only cache getter"
 else
-  pass "PhysicalBridge has no forbidden capability or side effect"
+  pass "getPhysicalState is a non-blocking read-only cache getter"
 fi
 
-grep -q 'new PhysicalBridge' "$MAIN" && grep -q '"ElpisPhysical"' "$MAIN" \
-  && pass "ElpisPhysical is registered" || fail "ElpisPhysical registration missing"
+for token in schemaVersion monitoring available ready sampledAt updatedAt lux maxRange; do
+  grep -q "$token" "$BRIDGE" \
+    && pass "schema field $token" \
+    || fail "schema field $token missing"
+done
+grep -q 'result.put("value", sensor.value)' "$BRIDGE" \
+  && pass "proximity uses value" || fail "proximity value missing"
+grep -q 'result.put("maxRange", sensor.maxRange)' "$BRIDGE" \
+  && pass "proximity uses maxRange" || fail "proximity maxRange missing"
 
-[[ -f "$MANIFEST" ]] \
-  && pass "AndroidManifest.xml exists" \
-  || fail "AndroidManifest.xml missing: $MANIFEST"
-[[ -d "$GEN" ]] \
-  && pass "generated Canary source directory exists" \
-  || fail "generated Canary source directory missing: $GEN"
-[[ -f "$GEN/PhysicalBridge.java" ]] \
-  && pass "generated PhysicalBridge present" \
-  || fail "generated PhysicalBridge missing: $GEN/PhysicalBridge.java"
+if grep -Eq 'ForegroundService|startForegroundService|startService\(|BootReceiver|AlarmManager|WorkManager|Handler|Timer|scheduledExecutor|SharedPreferences|SQLite|HttpURLConnection|WebSocket|MCP|Firebase|GMS' "$STORE" "$BRIDGE" "$MAIN"; then
+  fail "physical layer contains a forbidden background/network/persistence capability"
+else
+  pass "physical layer has no forbidden background/network/persistence capability"
+fi
 
-if grep -Eq 'ACCESS_.*LOCATION|ACTIVITY_RECOGNITION|BLUETOOTH|READ_CALENDAR|WRITE_CALENDAR|BIND_.*SERVICE|BODY_SENSORS|BODY_SENSORS_BACKGROUND|FOREGROUND_SERVICE|RECEIVE_BOOT_COMPLETED|CAMERA|RECORD_AUDIO|SYSTEM_ALERT_WINDOW|SCHEDULE_EXACT_ALARM|REQUEST_INSTALL_PACKAGES|WRITE_SETTINGS' "$MANIFEST"; then
+if grep -Eq 'android.permission.(ACCESS_.*LOCATION|ACTIVITY_RECOGNITION|BLUETOOTH|READ_CALENDAR|WRITE_CALENDAR|BODY_SENSORS|BODY_SENSORS_BACKGROUND|FOREGROUND_SERVICE|RECEIVE_BOOT_COMPLETED|CAMERA|RECORD_AUDIO|SYSTEM_ALERT_WINDOW|SCHEDULE_EXACT_ALARM|REQUEST_INSTALL_PACKAGES|WRITE_SETTINGS)' "$MANIFEST"; then
   fail "P2C.1 introduced a dangerous or special permission"
 else
   pass "no P2C.1 dangerous/special permission"
 fi
 
+for file in PhysicalStateStore.java PhysicalBridge.java; do
+  [[ -f "$GEN/$file" ]] && pass "generated $file exists" || fail "generated $file missing"
+done
+[[ -f "$GEN/MainActivity.java" ]] \
+  && pass "generated MainActivity exists" \
+  || fail "generated MainActivity missing"
+
 [[ "$FAIL" -eq 0 ]] || exit 1
-echo "P2C.1 contract test PASSED"
+echo "P2C.1 foreground physical cache contract PASSED"
