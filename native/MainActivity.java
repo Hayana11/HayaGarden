@@ -10,8 +10,8 @@ import com.getcapacitor.Bridge;
 import com.getcapacitor.BridgeActivity;
 
 /**
- * Phase 2B Canary activity: P1B back semantics, P2A ElpisNative, and the
- * narrow explicit-notification-tap route to Chat. No lifecycle reloads.
+ * Phase 2C.1 Canary activity: P1B back semantics, P2A ElpisNative,
+ * P2B notifications, and the narrow P2C.1 physical snapshot bridge.
  */
 public class MainActivity extends BridgeActivity {
     @Override
@@ -28,6 +28,10 @@ public class MainActivity extends BridgeActivity {
             webView.addJavascriptInterface(
                 new NotificationBridge(this),
                 "ElpisNotifications"
+            );
+            webView.addJavascriptInterface(
+                new PhysicalBridge(getApplicationContext()),
+                "ElpisPhysical"
             );
         }
 

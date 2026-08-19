@@ -12,6 +12,7 @@ on:
       - claude/app-shell-p2b-native-notifications
       - 'claude/app-shell-p2b-native-notifications/**'
       - claude/p2b1-notification-icon-polish
+      - agent/p2c1-physical-reality-sensors
   workflow_dispatch:
   pull_request:
     branches:
@@ -49,11 +50,14 @@ jobs:
       - name: Sync Capacitor
         run: npx cap sync android
 
-      - name: Apply P2B Native Notifications (composes P2A)
-        run: bash scripts/apply-p2b-native-notifications.sh
+      - name: Apply P2C.1 Physical (composes P2B)
+        run: bash scripts/apply-p2c1-physical.sh
 
       - name: P2B contract test
         run: bash scripts/test-p2b-native-notifications.sh
+
+      - name: P2C.1 contract test
+        run: bash scripts/test-p2c1-physical.sh
 
       - name: Generate app icons
         run: |
@@ -69,6 +73,6 @@ jobs:
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Elpis-Canary-p2b-native-notifications-${{ github.run_number }}
+          name: Elpis-Canary-p2c1-physical-\${{ github.run_number }}
           path: android/app/build/outputs/apk/debug/app-debug.apk
           retention-days: 30
