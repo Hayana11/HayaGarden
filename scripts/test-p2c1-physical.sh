@@ -6,7 +6,7 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 STORE="$ROOT/native/PhysicalStateStore.java"
 BRIDGE="$ROOT/native/PhysicalBridge.java"
 MAIN="$ROOT/native/MainActivity.java"
-ANDROID_ROOT="\${1:-\$ROOT/android}"
+ANDROID_ROOT="${1:-$ROOT/android}"
 GEN="$ANDROID_ROOT/app/src/main/java/xyz/lovestyle/home/canary"
 MANIFEST="$ANDROID_ROOT/app/src/main/AndroidManifest.xml"
 FAIL=0
@@ -19,7 +19,7 @@ for file in "$STORE" "$BRIDGE" "$MAIN"; do
   require_file "$file"
 done
 
-[[ "\$(grep -c '@JavascriptInterface' "$BRIDGE")" -eq 1 ]] \
+[[ "$(grep -c '@JavascriptInterface' "$BRIDGE")" -eq 1 ]] \
   && pass "ElpisPhysical exposes exactly one JS method" \
   || fail "ElpisPhysical must expose exactly one JS method"
 grep -q 'public String getPhysicalState()' "$BRIDGE" \

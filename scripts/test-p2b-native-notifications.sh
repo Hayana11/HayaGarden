@@ -9,7 +9,7 @@ NATIVE_BRIDGE="$NATIVE/NativeBridge.java"
 BRIDGE="$NATIVE/NotificationBridge.java"
 SUPPORT="$NATIVE/NotificationSupport.java"
 WORKER="$NATIVE/NotificationPollWorker.java"
-ANDROID_ROOT="\${1:-\$ROOT/android}"
+ANDROID_ROOT="${1:-$ROOT/android}"
 MANIFEST="$ANDROID_ROOT/app/src/main/AndroidManifest.xml"
 GRADLE="$ANDROID_ROOT/app/build.gradle"
 GEN_JAVA="$ANDROID_ROOT/app/src/main/java/xyz/lovestyle/home/canary"
@@ -36,16 +36,16 @@ done
 
 mapfile -t P2A_METHODS < <(methods_after_js "$NATIVE_BRIDGE")
 EXPECTED_P2A=(getBattery getScreenTime hasUsageAccess openUsageAccessSettings isIgnoringBatteryOptimizations requestIgnoreBatteryOptimizations)
-[[ \${#P2A_METHODS[@]} -eq 6 ]] || fail "NativeBridge must expose exactly six methods"
-for method in "\${EXPECTED_P2A[@]}"; do
-  printf '%s\n' "\${P2A_METHODS[@]}" | grep -qx "$method" && pass "P2A keeps $method" || fail "P2A missing $method"
+[[ ${#P2A_METHODS[@]} -eq 6 ]] || fail "NativeBridge must expose exactly six methods"
+for method in "${EXPECTED_P2A[@]}"; do
+  printf '%s\n' "${P2A_METHODS[@]}" | grep -qx "$method" && pass "P2A keeps $method" || fail "P2A missing $method"
 done
 
 mapfile -t P2B_METHODS < <(methods_after_js "$BRIDGE")
 EXPECTED_P2B=(hasNotificationPermission requestNotificationPermission showTestNotification)
-[[ \${#P2B_METHODS[@]} -eq 3 ]] || fail "NotificationBridge must expose exactly three methods"
-for method in "\${EXPECTED_P2B[@]}"; do
-  printf '%s\n' "\${P2B_METHODS[@]}" | grep -qx "$method" && pass "P2B exposes $method" || fail "P2B missing $method"
+[[ ${#P2B_METHODS[@]} -eq 3 ]] || fail "NotificationBridge must expose exactly three methods"
+for method in "${EXPECTED_P2B[@]}"; do
+  printf '%s\n' "${P2B_METHODS[@]}" | grep -qx "$method" && pass "P2B exposes $method" || fail "P2B missing $method"
 done
 grep -q '"ElpisNotifications"' "$MAIN" && pass "MainActivity injects ElpisNotifications" || fail "missing notification bridge injection"
 
@@ -107,7 +107,7 @@ if [[ -f "$MANIFEST" ]]; then
   done
 fi
 if [[ -f "$GRADLE" ]]; then
-  [[ "\$(grep -Fc 'androidx.work:work-runtime:2.9.0' "$GRADLE")" -eq 1 ]] \
+  [[ "$(grep -Fc 'androidx.work:work-runtime:2.9.0' "$GRADLE")" -eq 1 ]] \
     && pass "one WorkManager dependency" || fail "WorkManager dependency must occur exactly once"
   if grep -qiE 'okhttp|firebase|play-services|local-notifications' "$GRADLE"; then
     fail "forbidden notification dependency present"
