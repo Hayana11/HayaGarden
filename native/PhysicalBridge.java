@@ -130,9 +130,17 @@ public final class PhysicalBridge {
 
         try {
             for (SensorSample sample : samples) {
-                if (sample.sensor != null
-                        && !manager.registerListener(
-                                listener, sample.sensor, SensorManager.SENSOR_DELAY_NORMAL)) {
+                if (sample.sensor == null) {
+                    continue;
+                }
+                boolean registered = false;
+                try {
+                    registered = manager.registerListener(
+                            listener, sample.sensor, SensorManager.SENSOR_DELAY_NORMAL);
+                } catch (RuntimeException ignored) {
+                    // One sensor registration failure must not affect the others.
+                }
+                if (!registered) {
                     sample.fail();
                     complete.countDown();
                 }
