@@ -73,6 +73,6 @@ jobs:
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Elpis-Canary-p2c1-physical-\${{ github.run_number }}
+          name: Elpis-Canary-p2c1-physical-${{ github.run_number }}
           path: android/app/build/outputs/apk/debug/app-debug.apk
           retention-days: 30

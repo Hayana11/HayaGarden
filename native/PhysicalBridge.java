@@ -166,11 +166,13 @@ public final class PhysicalBridge {
                 result.put("x", values[0]);
                 result.put("y", values[1]);
                 result.put("z", values[2]);
-            } else {
+            } else if (sample.type == Sensor.TYPE_PROXIMITY) {
                 result.put("value", values[0]);
-                if (sample.type == Sensor.TYPE_PROXIMITY && sample.sensor != null) {
+                if (sample.sensor != null) {
                     result.put("maxRange", sample.sensor.getMaximumRange());
                 }
+            } else if (sample.type == Sensor.TYPE_LIGHT) {
+                result.put("lux", values[0]);
             }
         } catch (JSONException ignored) {
             // Keep the per-sensor unavailable shape on an unexpected JSON error.

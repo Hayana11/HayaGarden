@@ -5,7 +5,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 BRIDGE="$ROOT/native/PhysicalBridge.java"
 MAIN="$ROOT/native/MainActivity.java"
-ANDROID_ROOT="\${1:-\$ROOT/android}"
+ANDROID_ROOT="${1:-$ROOT/android}"
 GEN="$ANDROID_ROOT/app/src/main/java/xyz/lovestyle/home/canary"
 MANIFEST="$ANDROID_ROOT/app/src/main/AndroidManifest.xml"
 FAIL=0
@@ -37,6 +37,25 @@ grep -q 'CountDownLatch' "$BRIDGE" \
 grep -q 'available.*false' "$BRIDGE" \
   && pass "unavailable shape exists" || fail "missing unavailable shape"
 
+grep -q 'sample.type == Sensor.TYPE_LIGHT' "$BRIDGE" \
+  && pass "light branch is explicit" || fail "light branch missing"
+grep -q 'result.put("lux", values[0])' "$BRIDGE" \
+  && pass "light uses lux" || fail "light lux contract missing"
+grep -q 'sample.type == Sensor.TYPE_PROXIMITY' "$BRIDGE" \
+  && pass "proximity branch is explicit" || fail "proximity branch missing"
+grep -q 'result.put("value", values[0])' "$BRIDGE" \
+  && pass "proximity uses value" || fail "proximity value contract missing"
+grep -q 'result.put("maxRange", sample.sensor.getMaximumRange())' "$BRIDGE" \
+  && pass "proximity includes maxRange" || fail "proximity maxRange contract missing"
+
+LIGHT_BLOCK="$(sed -n '/sample.type == Sensor.TYPE_LIGHT/,/}/p' "$BRIDGE")"
+if grep -q 'result.put("value"' <<<"$LIGHT_BLOCK"; then
+  fail "light branch must not substitute value for lux"
+else
+  pass "light branch has no value substitution"
+fi
+
+
 if grep -Eq 'ForegroundService|BootReceiver|WorkManager|AlarmManager|startService|startForeground|SharedPreferences|SQLite|HttpURLConnection|WebSocket|nativeCommand|executeNative|runCapability|requestPermissions|POST_NOTIFICATIONS|ACCESS_.*LOCATION|PACKAGE_USAGE_STATS' "$BRIDGE"; then
   fail "PhysicalBridge contains forbidden capability or side effect"
 else
@@ -46,18 +65,20 @@ fi
 grep -q 'new PhysicalBridge' "$MAIN" && grep -q '"ElpisPhysical"' "$MAIN" \
   && pass "ElpisPhysical is registered" || fail "ElpisPhysical registration missing"
 
-if [[ -f "$MANIFEST" ]]; then
-  if grep -Eq 'ACCESS_.*LOCATION|ACTIVITY_RECOGNITION|BLUETOOTH|READ_CALENDAR|BIND_NOTIFICATION_LISTENER_SERVICE' "$MANIFEST"; then
-    fail "P2C.1 introduced a forbidden permission"
-  else
-    pass "no P2C.1 dangerous/special permission"
-  fi
-fi
+[[ -f "$MANIFEST" ]] \
+  && pass "AndroidManifest.xml exists" \
+  || fail "AndroidManifest.xml missing: $MANIFEST"
+[[ -d "$GEN" ]] \
+  && pass "generated Canary source directory exists" \
+  || fail "generated Canary source directory missing: $GEN"
+[[ -f "$GEN/PhysicalBridge.java" ]] \
+  && pass "generated PhysicalBridge present" \
+  || fail "generated PhysicalBridge missing: $GEN/PhysicalBridge.java"
 
-if [[ -d "$GEN" ]]; then
-  [[ -f "$GEN/PhysicalBridge.java" ]] \
-    && pass "generated PhysicalBridge present" \
-    || fail "generated PhysicalBridge missing"
+if grep -Eq 'ACCESS_.*LOCATION|ACTIVITY_RECOGNITION|BLUETOOTH|READ_CALENDAR|WRITE_CALENDAR|BIND_.*SERVICE|BODY_SENSORS|BODY_SENSORS_BACKGROUND|FOREGROUND_SERVICE|RECEIVE_BOOT_COMPLETED|CAMERA|RECORD_AUDIO|SYSTEM_ALERT_WINDOW|SCHEDULE_EXACT_ALARM|REQUEST_INSTALL_PACKAGES|WRITE_SETTINGS' "$MANIFEST"; then
+  fail "P2C.1 introduced a dangerous or special permission"
+else
+  pass "no P2C.1 dangerous/special permission"
 fi
 
 [[ "$FAIL" -eq 0 ]] || exit 1
