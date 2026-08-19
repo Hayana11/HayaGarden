@@ -45,8 +45,8 @@ grep -q 'synchronized (lock)' "$STORE" \
   && pass "store state access is synchronized" \
   || fail "store synchronization missing"
 
-RESUME_BLOCK="$(sed -n '/protected void onResume/,/protected void onPause/p' "$MAIN")"
-PAUSE_BLOCK="$(sed -n '/protected void onPause/,/protected void onNewIntent/p' "$MAIN")"
+RESUME_BLOCK="$(sed -n '/public void onResume/,/public void onPause/p' "$MAIN")"
+PAUSE_BLOCK="$(sed -n '/public void onPause/,/protected void onNewIntent/p' "$MAIN")"
 printf '%s\n' "$RESUME_BLOCK" | grep -q 'physicalStateStore.start()' \
   && pass "onResume starts physical collection" \
   || fail "onResume start hook missing"
