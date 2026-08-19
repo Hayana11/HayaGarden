@@ -45,6 +45,24 @@ grep -q 'synchronized (lock)' "$STORE" \
   && pass "store state access is synchronized" \
   || fail "store synchronization missing"
 
+for token in 'Intent.ACTION_BATTERY_CHANGED' \
+             'BatteryManager.EXTRA_LEVEL' 'BatteryManager.EXTRA_SCALE' 'BatteryManager.EXTRA_STATUS' \
+             'BatteryManager.BATTERY_STATUS_CHARGING' 'BatteryManager.BATTERY_STATUS_FULL' \
+             'registerReceiver' 'unregisterReceiver' 'batteryReceiverRegistered'; do
+  grep -q "$token" "$STORE" \
+    && pass "battery contract contains $token" \
+    || fail "battery contract missing $token"
+done
+
+START_BLOCK="$(sed -n '/public void start()/,/public void stop()/p' "$STORE")"
+STOP_BLOCK="$(sed -n '/public void stop()/,/public Snapshot snapshot()/p' "$STORE")"
+printf '%s\n' "$START_BLOCK" | grep -q 'registerBatteryReceiverLocked' \
+  && pass "battery receiver registers in foreground start" \
+  || fail "battery receiver registration is not in start path"
+printf '%s\n' "$STOP_BLOCK" | grep -q 'unregisterBatteryReceiverLocked' \
+  && pass "battery receiver unregisters in foreground stop" \
+  || fail "battery receiver cleanup is not in stop path"
+
 RESUME_BLOCK="$(sed -n '/public void onResume/,/public void onPause/p' "$MAIN")"
 PAUSE_BLOCK="$(sed -n '/public void onPause/,/protected void onNewIntent/p' "$MAIN")"
 printf '%s\n' "$RESUME_BLOCK" | grep -q 'physicalStateStore.start()' \
@@ -64,6 +82,13 @@ if printf '%s\n' "$GETTER" | grep -Eq 'registerListener|unregisterListener|Count
   fail "getPhysicalState is not a read-only cache getter"
 else
   pass "getPhysicalState is a non-blocking read-only cache getter"
+fi
+
+SNAPSHOT_BLOCK="$(sed -n '/public Snapshot snapshot()/,/private void refreshAvailabilityLocked/p' "$STORE")"
+if printf '%s\n' "$SNAPSHOT_BLOCK" | grep -Eq 'refreshBattery|registerReceiver|unregisterReceiver|BatteryManager|NativeBridge|getBattery'; then
+  fail "snapshot is not a RAM-only battery cache copy"
+else
+  pass "snapshot remains a RAM-only battery cache copy"
 fi
 
 for token in schemaVersion monitoring available ready sampledAt updatedAt lux maxRange; do
