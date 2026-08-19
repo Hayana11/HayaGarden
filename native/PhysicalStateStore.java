@@ -29,6 +29,7 @@ public final class PhysicalStateStore {
     private Sensor proximitySensor;
     private Sensor lightSensor;
     private BatteryState battery = new BatteryState();
+    // True only while foreground collection is active and SensorManager is available.
     private boolean monitoring;
     private long latestSampledAt;
     private long updatedAt;
@@ -65,7 +66,9 @@ public final class PhysicalStateStore {
 
             refreshAvailabilityLocked();
             refreshBatteryLocked();
-            monitoring = true;
+            // monitoring means the foreground collection session is active;
+            // without SensorManager there is no active collection infrastructure.
+            monitoring = sensorManager != null;
             updatedAt = System.currentTimeMillis();
 
             if (sensorManager == null) {

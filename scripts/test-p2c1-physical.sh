@@ -82,10 +82,15 @@ else
   pass "physical layer has no forbidden background/network/persistence capability"
 fi
 
-if grep -Eq 'android.permission.(ACCESS_.*LOCATION|ACTIVITY_RECOGNITION|BLUETOOTH|READ_CALENDAR|WRITE_CALENDAR|BODY_SENSORS|BODY_SENSORS_BACKGROUND|FOREGROUND_SERVICE|RECEIVE_BOOT_COMPLETED|CAMERA|RECORD_AUDIO|SYSTEM_ALERT_WINDOW|SCHEDULE_EXACT_ALARM|REQUEST_INSTALL_PACKAGES|WRITE_SETTINGS)' "$MANIFEST"; then
-  fail "P2C.1 introduced a dangerous or special permission"
+require_file "$MANIFEST"
+if [[ -f "$MANIFEST" ]]; then
+  if grep -Eq 'android.permission.(ACCESS_.*LOCATION|ACTIVITY_RECOGNITION|BLUETOOTH|READ_CALENDAR|WRITE_CALENDAR|BODY_SENSORS|BODY_SENSORS_BACKGROUND|FOREGROUND_SERVICE|RECEIVE_BOOT_COMPLETED|CAMERA|RECORD_AUDIO|SYSTEM_ALERT_WINDOW|SCHEDULE_EXACT_ALARM|REQUEST_INSTALL_PACKAGES|WRITE_SETTINGS)' "$MANIFEST"; then
+    fail "P2C.1 introduced a dangerous or special permission"
+  else
+    pass "no P2C.1 dangerous/special permission"
+  fi
 else
-  pass "no P2C.1 dangerous/special permission"
+  fail "cannot evaluate permissions because AndroidManifest.xml is missing"
 fi
 
 for file in PhysicalStateStore.java PhysicalBridge.java; do
