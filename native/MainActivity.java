@@ -10,6 +10,9 @@ import android.view.View;
 import android.view.Window;
 import android.view.WindowManager;
 import android.webkit.WebView;
+import androidx.core.graphics.Insets;
+import androidx.core.view.ViewCompat;
+import androidx.core.view.WindowInsetsCompat;
 import androidx.activity.OnBackPressedCallback;
 import com.getcapacitor.Bridge;
 import com.getcapacitor.BridgeActivity;
@@ -32,6 +35,7 @@ public class MainActivity extends BridgeActivity {
         Bridge bridge = getBridge();
         WebView webView = bridge != null ? bridge.getWebView() : null;
         if (webView != null) {
+            configureImeResize(webView);
             webView.addJavascriptInterface(
                 new NativeBridge(getApplicationContext()),
                 "ElpisNative"
@@ -75,8 +79,36 @@ public class MainActivity extends BridgeActivity {
         );
     }
 
+    /**
+     * Keep the WebView content viewport above the IME without changing the
+     * frontend composer or bottom-navigation contract.
+     * Navigation-bar safe area remains owned by the WebView/frontend.
+     */
+    private void configureImeResize(WebView webView) {
+        final int baseBottomPadding = webView.getPaddingBottom();
+
+        ViewCompat.setOnApplyWindowInsetsListener(webView, (view, insets) -> {
+            Insets imeInsets = insets.getInsets(WindowInsetsCompat.Type.ime());
+            int imeBottom = insets.isVisible(WindowInsetsCompat.Type.ime())
+                    ? imeInsets.bottom
+                    : 0;
+            int targetBottomPadding = baseBottomPadding + imeBottom;
+
+            if (view.getPaddingBottom() != targetBottomPadding) {
+                view.setPadding(
+                        view.getPaddingLeft(),
+                        view.getPaddingTop(),
+                        view.getPaddingRight(),
+                        targetBottomPadding
+                );
+            }
+            return insets;
+        });
+        ViewCompat.requestApplyInsets(webView);
+    }
     private void configureTopStatusBar() {
         Window window = getWindow();
+        window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
         window.addFlags(WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS);
         window.setStatusBarColor(Color.TRANSPARENT);
 

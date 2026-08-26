@@ -54,6 +54,9 @@ jobs:
       - name: Apply P2C.1 Physical (composes P2B)
         run: bash scripts/apply-p2c1-physical.sh
 
+      - name: IME edge-to-edge contract test
+        run: bash scripts/test-ime-edge-to-edge.sh android
+
       - name: P2B contract test
         run: bash scripts/test-p2b-native-notifications.sh
 
