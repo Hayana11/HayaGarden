@@ -17,6 +17,7 @@ on:
   pull_request:
     branches:
       - main
+      - claude/p2b1-notification-icon-polish
       - claude/app-shell-reset-p1-navigation
       - claude/app-shell-p2a-nativebridge-lite
 
