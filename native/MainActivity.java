@@ -22,6 +22,7 @@ import com.getcapacitor.BridgeActivity;
  * P2B notifications, and the foreground-live P2C.1 physical cache.
  */
 public class MainActivity extends BridgeActivity {
+    private static final int SYSTEM_BAR_SURFACE_COLOR = Color.TRANSPARENT;
     private PhysicalStateStore physicalStateStore;
 
     @Override
@@ -106,11 +107,15 @@ public class MainActivity extends BridgeActivity {
         });
         ViewCompat.requestApplyInsets(webView);
     }
+
     private void configureTopStatusBar() {
         Window window = getWindow();
         window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
         window.addFlags(WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS);
-        window.setStatusBarColor(Color.TRANSPARENT);
+
+        // Both bars intentionally use the existing transparent status-bar source.
+        window.setStatusBarColor(SYSTEM_BAR_SURFACE_COLOR);
+        window.setNavigationBarColor(SYSTEM_BAR_SURFACE_COLOR);
 
         int flags = window.getDecorView().getSystemUiVisibility()
                 | View.SYSTEM_UI_FLAG_LAYOUT_STABLE
@@ -118,7 +123,17 @@ public class MainActivity extends BridgeActivity {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             flags |= View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR;
         }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            flags |= View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR;
+        }
         window.getDecorView().setSystemUiVisibility(flags);
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            window.setNavigationBarDividerColor(SYSTEM_BAR_SURFACE_COLOR);
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            window.setNavigationBarContrastEnforced(false);
+        }
     }
 
     @Override
