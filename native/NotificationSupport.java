@@ -24,7 +24,7 @@ public final class NotificationSupport {
     public static final String WORK_NAME = "poll_fyodor";
     public static final String API =
             "https://love-style.xyz/api/wake_log/pending_notification";
-    public static final String CHAT_URL = "https://love-style.xyz/chat";
+    public static final String CHAT_URL = "https://love-style.xyz/dash/chat";
     public static final String EXTRA_OPEN_CHAT = "elpis.notification.open_chat";
     public static final int REQUEST_NOTIFICATION_PERMISSION = 2001;
     private static final String DEFAULT_TITLE = "费奥多尔";
@@ -104,7 +104,7 @@ public final class NotificationSupport {
                 ? 0xE1F15 : messageId.hashCode();
 
         NotificationCompat.Builder builder = new NotificationCompat.Builder(ctx, CHANNEL_ID)
-                .setSmallIcon(android.R.drawable.ic_dialog_email)
+                .setSmallIcon(R.drawable.ic_elpis_notification_cat)
                 .setContentTitle(displayTitle)
                 .setContentText(displayBody)
                 .setStyle(new NotificationCompat.BigTextStyle().bigText(displayBody))

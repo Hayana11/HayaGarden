@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <!-- Notification small icon: alpha-only cat-head silhouette on a transparent background. -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M5.2,10.3L5.2,4.4L9.1,6.5C10,6.1 11,5.9 12,5.9C13,5.9 14,6.1 14.9,6.5L18.8,4.4L18.8,10.3C19.3,11.2 19.6,12.3 19.6,13.5C19.6,17.4 16.2,20.3 12,20.3C7.8,20.3 4.4,17.4 4.4,13.5C4.4,12.3 4.7,11.2 5.2,10.3Z"/>
+</vector>

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Phase 2B source and generated-tree contract locks.
+# P2B source and generated-tree contract locks.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -19,10 +19,6 @@ pass() { echo "PASS: $*"; }
 fail() { echo "FAIL: $*" >&2; FAIL=1; }
 require_file() { [[ -f "$1" ]] && pass "present $1" || fail "missing $1"; }
 
-for file in "$MAIN" "$NATIVE_BRIDGE" "$BRIDGE" "$SUPPORT" "$WORKER"; do
-  require_file "$file"
-done
-
 methods_after_js() {
   awk '
     /@JavascriptInterface/ { pending=1; next }
@@ -33,6 +29,10 @@ methods_after_js() {
     pending && /public/ { pending=0 }
   ' "$1" | sed -E 's/.*public[[:space:]]+[A-Za-z0-9_<>]+[[:space:]]+([A-Za-z0-9_]+)[[:space:]]*\(.*/\1/'
 }
+
+for file in "$MAIN" "$NATIVE_BRIDGE" "$BRIDGE" "$SUPPORT" "$WORKER"; do
+  require_file "$file"
+done
 
 mapfile -t P2A_METHODS < <(methods_after_js "$NATIVE_BRIDGE")
 EXPECTED_P2A=(getBattery getScreenTime hasUsageAccess openUsageAccessSettings isIgnoringBatteryOptimizations requestIgnoreBatteryOptimizations)
@@ -81,16 +81,16 @@ else
   pass "no custom foreground service or receiver"
 fi
 
-for token in 'CHANNEL_ID = "fyodor_msg"' 'CHANNEL_NAME = "费奥多尔的消息"' 'WORK_NAME = "poll_fyodor"' 'PeriodicWorkRequest' '15, TimeUnit.MINUTES' 'NetworkType.CONNECTED' 'ExistingPeriodicWorkPolicy.KEEP'; do
+for token in 'CHANNEL_ID = "fyodor_msg"' 'CHANNEL_NAME = "费奥多尔的消息"' 'WORK_NAME = "poll_fyodor"' 'CHAT_URL = "https://love-style.xyz/dash/chat"' 'PeriodicWorkRequest' '15, TimeUnit.MINUTES' 'NetworkType.CONNECTED' 'ExistingPeriodicWorkPolicy.KEEP'; do
   grep -qF "$token" "$SUPPORT" && pass "notification contract has $token" || fail "missing $token"
 done
 grep -qF 'EXTRA_OPEN_CHAT' "$SUPPORT" && grep -qF 'handleNotificationIntent' "$MAIN" \
   && grep -qF 'onNewIntent' "$MAIN" && grep -qF 'webView.loadUrl(NotificationSupport.CHAT_URL)' "$MAIN" \
   && pass "notification tap is gated to Chat" || fail "tap-to-Chat contract missing"
-if grep -Eq 'onResume|reload\(|clearCache|clearHistory' "$MAIN"; then
-  fail "lifecycle regression in MainActivity"
+if grep -Eq 'reload\(|clearCache|clearHistory' "$MAIN"; then
+  fail "P1B no-reload behavior regressed"
 else
-  pass "P1B lifecycle baseline retained"
+  pass "P1B no-reload behavior retained; additive physical lifecycle hooks allowed"
 fi
 
 if [[ -f "$MANIFEST" ]]; then
