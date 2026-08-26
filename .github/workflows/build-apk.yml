@@ -17,6 +17,7 @@ on:
   pull_request:
     branches:
       - main
+      - claude/p2b1-notification-icon-polish
       - claude/app-shell-reset-p1-navigation
       - claude/app-shell-p2a-nativebridge-lite
 
@@ -58,6 +59,9 @@ jobs:
 
       - name: P2C.1 contract test
         run: bash scripts/test-p2c1-physical.sh
+
+      - name: Top safe inset and edge-to-edge contract test
+        run: bash scripts/test-top-safe-inset-edge-to-edge.sh
 
       - name: Generate app icons
         run: |
