@@ -116,9 +116,23 @@ public class MainActivity extends BridgeActivity {
                 );
             }
 
-            String state = imeVisible ? "OPEN" : "CLOSED";
-            logImeMetrics(webView, imeContainer, insets, state);
-            captureJavascriptViewport(webView, state);
+            String insetsState = imeVisible ? "OPEN_INSETS" : "CLOSED_INSETS";
+            logImeMetrics(webView, imeContainer, insets, insetsState);
+            captureJavascriptViewport(webView, insetsState);
+
+            imeContainer.post(() -> {
+                WindowInsetsCompat postLayoutInsets =
+                        ViewCompat.getRootWindowInsets(imeContainer);
+                if (postLayoutInsets == null) {
+                    postLayoutInsets = insets;
+                }
+                String postLayoutState = postLayoutInsets.isVisible(
+                        WindowInsetsCompat.Type.ime())
+                        ? "OPEN_POST_LAYOUT"
+                        : "CLOSED_POST_LAYOUT";
+                logImeMetrics(webView, imeContainer, postLayoutInsets, postLayoutState);
+                captureJavascriptViewport(webView, postLayoutState);
+            });
             return insets;
         });
         ViewCompat.requestApplyInsets(imeContainer);
@@ -170,7 +184,7 @@ public class MainActivity extends BridgeActivity {
             @Override
             public void run() {
                 if (webView.getUrl() != null) {
-                    captureJavascriptViewport(webView, "CLOSED");
+                    captureJavascriptViewport(webView, "CLOSED_POST_LAYOUT");
                     return;
                 }
                 if (attempts++ < 12) {
