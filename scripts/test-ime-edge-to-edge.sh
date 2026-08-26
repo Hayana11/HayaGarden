@@ -26,9 +26,16 @@ if grep -q 'WindowInsetsCompat.CONSUMED' "$MAIN"; then
   exit 1
 fi
 
+grep -q 'ViewGroup imeContainer' "$MAIN"
+grep -q 'webView.getParent()' "$MAIN"
+grep -q 'ViewCompat.setOnApplyWindowInsetsListener(imeContainer' "$MAIN"
 grep -q 'baseBottomPadding' "$MAIN"
 grep -q 'targetBottomPadding' "$MAIN"
-grep -q 'ViewCompat.requestApplyInsets' "$MAIN"
+grep -q 'ViewCompat.requestApplyInsets(imeContainer)' "$MAIN"
+if grep -q 'webView.setPadding' "$MAIN"; then
+  echo "IME inset must resize the native container, not only WebView padding" >&2
+  exit 1
+fi
 if grep -Eq 'Type\.systemBars\(\).*Type\.ime\(\)|Type\.ime\(\).*Type\.systemBars\(\)' "$MAIN"; then
   echo "IME and navigation/system-bar insets must not be merged here" >&2
   exit 1

@@ -7,6 +7,7 @@ import android.content.pm.PackageManager;
 import android.os.Bundle;
 import android.os.Build;
 import android.view.View;
+import android.view.ViewGroup;
 import android.view.Window;
 import android.view.WindowManager;
 import android.webkit.WebView;
@@ -80,14 +81,18 @@ public class MainActivity extends BridgeActivity {
     }
 
     /**
-     * Keep the WebView content viewport above the IME without changing the
-     * frontend composer or bottom-navigation contract.
+     * Shrink the native container that owns the WebView when the IME opens.
+     * This changes the WebView viewport so fixed-position frontend elements
+     * remain above the keyboard without a frontend keyboard-height workaround.
      * Navigation-bar safe area remains owned by the WebView/frontend.
      */
     private void configureImeResize(WebView webView) {
-        final int baseBottomPadding = webView.getPaddingBottom();
+        final ViewGroup imeContainer = webView.getParent() instanceof ViewGroup
+                ? (ViewGroup) webView.getParent()
+                : webView;
+        final int baseBottomPadding = imeContainer.getPaddingBottom();
 
-        ViewCompat.setOnApplyWindowInsetsListener(webView, (view, insets) -> {
+        ViewCompat.setOnApplyWindowInsetsListener(imeContainer, (view, insets) -> {
             Insets imeInsets = insets.getInsets(WindowInsetsCompat.Type.ime());
             int imeBottom = insets.isVisible(WindowInsetsCompat.Type.ime())
                     ? imeInsets.bottom
@@ -104,7 +109,7 @@ public class MainActivity extends BridgeActivity {
             }
             return insets;
         });
-        ViewCompat.requestApplyInsets(webView);
+        ViewCompat.requestApplyInsets(imeContainer);
     }
     private void configureTopStatusBar() {
         Window window = getWindow();
