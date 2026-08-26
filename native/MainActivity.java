@@ -1,9 +1,14 @@
 package xyz.lovestyle.home.canary;
 
 import android.Manifest;
+import android.graphics.Color;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.os.Bundle;
+import android.os.Build;
+import android.view.View;
+import android.view.Window;
+import android.view.WindowManager;
 import android.webkit.WebView;
 import androidx.activity.OnBackPressedCallback;
 import com.getcapacitor.Bridge;
@@ -19,6 +24,8 @@ public class MainActivity extends BridgeActivity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+
+        configureTopStatusBar();
 
         physicalStateStore = new PhysicalStateStore(getApplicationContext());
 
@@ -36,6 +43,10 @@ public class MainActivity extends BridgeActivity {
             webView.addJavascriptInterface(
                 new PhysicalBridge(physicalStateStore),
                 "ElpisPhysical"
+            );
+            webView.addJavascriptInterface(
+                new InsetsBridge(getApplicationContext(), webView),
+                "ElpisInsets"
             );
         }
 
@@ -62,6 +73,20 @@ public class MainActivity extends BridgeActivity {
                 }
             }
         );
+    }
+
+    private void configureTopStatusBar() {
+        Window window = getWindow();
+        window.addFlags(WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS);
+        window.setStatusBarColor(Color.TRANSPARENT);
+
+        int flags = window.getDecorView().getSystemUiVisibility()
+                | View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+                | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            flags |= View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR;
+        }
+        window.getDecorView().setSystemUiVisibility(flags);
     }
 
     @Override
