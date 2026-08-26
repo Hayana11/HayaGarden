@@ -13,13 +13,25 @@ done
 grep -q 'new InsetsBridge(getApplicationContext(), webView)' "$MAIN"
 grep -q '"ElpisInsets"' "$MAIN"
 grep -q 'configureTopStatusBar' "$MAIN"
-grep -q 'setStatusBarColor(Color.TRANSPARENT)' "$MAIN"
+grep -q 'private static final int SYSTEM_BAR_SURFACE_COLOR = Color.TRANSPARENT;' "$MAIN"
+grep -q 'setStatusBarColor(SYSTEM_BAR_SURFACE_COLOR)' "$MAIN"
+grep -q 'setNavigationBarColor(SYSTEM_BAR_SURFACE_COLOR)' "$MAIN"
+grep -q 'setNavigationBarDividerColor(SYSTEM_BAR_SURFACE_COLOR)' "$MAIN"
 grep -q 'SYSTEM_UI_FLAG_LAYOUT_STABLE' "$MAIN"
 grep -q 'SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN' "$MAIN"
 grep -q 'SYSTEM_UI_FLAG_LIGHT_STATUS_BAR' "$MAIN"
+grep -q 'SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR' "$MAIN"
+grep -q 'setNavigationBarContrastEnforced(false)' "$MAIN"
+grep -q 'Build.VERSION_CODES.O' "$MAIN"
+grep -q 'Build.VERSION_CODES.P' "$MAIN"
+grep -q 'Build.VERSION_CODES.Q' "$MAIN"
 
-if grep -Eq 'setNavigationBarColor|SYSTEM_UI_FLAG_(FULLSCREEN|HIDE_NAVIGATION|IMMERSIVE)|setDecorFitsSystemWindows' "$MAIN"; then
-  echo "forbidden navigation or immersive system-bar change" >&2
+if grep -Eq 'set(Status|Navigation)BarColor\((Color\.parseColor|0x|[0-9]+)' "$MAIN"; then
+  echo "system-bar colors must use the shared source" >&2
+  exit 1
+fi
+if grep -Eq 'SYSTEM_UI_FLAG_(HIDE_NAVIGATION|IMMERSIVE)|setDecorFitsSystemWindows|LAYOUT_HIDE_NAVIGATION' "$MAIN"; then
+  echo "current edge-to-edge behavior was changed unexpectedly" >&2
   exit 1
 fi
 
