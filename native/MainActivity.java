@@ -2,14 +2,18 @@ package xyz.lovestyle.home.canary;
 
 import android.Manifest;
 import android.graphics.Color;
+import android.graphics.Rect;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.os.Bundle;
 import android.os.Build;
+import android.util.Log;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.ViewParent;
 import android.view.Window;
 import android.view.WindowManager;
+import android.webkit.JavascriptInterface;
 import android.webkit.WebView;
 import androidx.core.graphics.Insets;
 import androidx.core.view.ViewCompat;
@@ -23,6 +27,7 @@ import com.getcapacitor.BridgeActivity;
  * P2B notifications, and the foreground-live P2C.1 physical cache.
  */
 public class MainActivity extends BridgeActivity {
+    private static final String IME_DIAGNOSTICS_TAG = "ElpisImeDiag";
     private PhysicalStateStore physicalStateStore;
 
     @Override
@@ -36,7 +41,12 @@ public class MainActivity extends BridgeActivity {
         Bridge bridge = getBridge();
         WebView webView = bridge != null ? bridge.getWebView() : null;
         if (webView != null) {
+            webView.addJavascriptInterface(
+                new ImeDiagnosticsBridge(),
+                "ElpisImeDiagnostics"
+            );
             configureImeResize(webView);
+            scheduleJavascriptImeDiagnostics(webView);
             webView.addJavascriptInterface(
                 new NativeBridge(getApplicationContext()),
                 "ElpisNative"
@@ -82,9 +92,8 @@ public class MainActivity extends BridgeActivity {
 
     /**
      * Shrink the native container that owns the WebView when the IME opens.
-     * This changes the WebView viewport so fixed-position frontend elements
-     * remain above the keyboard without a frontend keyboard-height workaround.
-     * Navigation-bar safe area remains owned by the WebView/frontend.
+     * This existing behavior is left unchanged; the surrounding diagnostics
+     * only record the resulting native and JS bounds for a real device run.
      */
     private void configureImeResize(WebView webView) {
         final ViewGroup imeContainer = webView.getParent() instanceof ViewGroup
@@ -94,9 +103,8 @@ public class MainActivity extends BridgeActivity {
 
         ViewCompat.setOnApplyWindowInsetsListener(imeContainer, (view, insets) -> {
             Insets imeInsets = insets.getInsets(WindowInsetsCompat.Type.ime());
-            int imeBottom = insets.isVisible(WindowInsetsCompat.Type.ime())
-                    ? imeInsets.bottom
-                    : 0;
+            boolean imeVisible = insets.isVisible(WindowInsetsCompat.Type.ime());
+            int imeBottom = imeVisible ? imeInsets.bottom : 0;
             int targetBottomPadding = baseBottomPadding + imeBottom;
 
             if (view.getPaddingBottom() != targetBottomPadding) {
@@ -107,9 +115,161 @@ public class MainActivity extends BridgeActivity {
                         targetBottomPadding
                 );
             }
+
+            String insetsState = imeVisible ? "OPEN_INSETS" : "CLOSED_INSETS";
+            logImeMetrics(webView, imeContainer, insets, insetsState);
+            captureJavascriptViewport(webView, insetsState);
+
+            imeContainer.post(() -> {
+                WindowInsetsCompat postLayoutInsets =
+                        ViewCompat.getRootWindowInsets(imeContainer);
+                if (postLayoutInsets == null) {
+                    postLayoutInsets = insets;
+                }
+                String postLayoutState = postLayoutInsets.isVisible(
+                        WindowInsetsCompat.Type.ime())
+                        ? "OPEN_POST_LAYOUT"
+                        : "CLOSED_POST_LAYOUT";
+                logImeMetrics(webView, imeContainer, postLayoutInsets, postLayoutState);
+                captureJavascriptViewport(webView, postLayoutState);
+            });
             return insets;
         });
         ViewCompat.requestApplyInsets(imeContainer);
+    }
+
+    private void logImeMetrics(
+            WebView webView,
+            ViewGroup imeContainer,
+            WindowInsetsCompat insets,
+            String state) {
+        View decorView = getWindow().getDecorView();
+        View contentView = findViewById(android.R.id.content);
+        ViewParent directParent = webView.getParent();
+        ViewGroup webViewParent = directParent instanceof ViewGroup
+                ? (ViewGroup) directParent
+                : null;
+        Insets imeInsets = insets.getInsets(WindowInsetsCompat.Type.ime());
+        boolean imeVisible = insets.isVisible(WindowInsetsCompat.Type.ime());
+        Rect visibleFrame = new Rect();
+        decorView.getWindowVisibleDisplayFrame(visibleFrame);
+
+        Log.i(
+                IME_DIAGNOSTICS_TAG,
+                "NATIVE state=" + state
+                        + " decorHeight=" + decorView.getHeight()
+                        + " contentMeasuredHeight=" + measuredHeight(contentView)
+                        + " contentHeight=" + height(contentView)
+                        + " webViewParentClass=" + className(webViewParent)
+                        + " webViewParentMeasuredHeight=" + measuredHeight(webViewParent)
+                        + " webViewParentHeight=" + height(webViewParent)
+                        + " webViewParentPaddingBottom=" + paddingBottom(webViewParent)
+                        + " webViewMeasuredHeight=" + webView.getMeasuredHeight()
+                        + " webViewHeight=" + webView.getHeight()
+                        + " webViewPaddingBottom=" + webView.getPaddingBottom()
+                        + " imeVisible=" + imeVisible
+                        + " imeBottom=" + imeInsets.bottom
+                        + " visibleFrameTop=" + visibleFrame.top
+                        + " visibleFrameBottom=" + visibleFrame.bottom
+                        + " visibleFrameHeight=" + visibleFrame.height()
+        );
+        Log.i(IME_DIAGNOSTICS_TAG, "VIEW_HIERARCHY state=" + state + " "
+                + viewHierarchy(webView));
+    }
+
+    private void scheduleJavascriptImeDiagnostics(WebView webView) {
+        webView.postDelayed(new Runnable() {
+            private int attempts;
+
+            @Override
+            public void run() {
+                if (webView.getUrl() != null) {
+                    captureJavascriptViewport(webView, "CLOSED_POST_LAYOUT");
+                    return;
+                }
+                if (attempts++ < 12) {
+                    webView.postDelayed(this, 1000L);
+                }
+            }
+        }, 1500L);
+    }
+
+    private void captureJavascriptViewport(WebView webView, String state) {
+        String jsState = state.replace("\\", "\\\\").replace("'", "\\'");
+        String script =
+                "(function(){"
+                + "var snapshot=function(s){"
+                + "var root=document.documentElement;"
+                + "var vv=window.visualViewport;"
+                + "var payload={state:s,"
+                + "windowInnerHeight:window.innerHeight,"
+                + "documentClientHeight:root?root.clientHeight:null,"
+                + "visualViewportHeight:vv?vv.height:null,"
+                + "visualViewportOffsetTop:vv?vv.offsetTop:null};"
+                + "try{console.log('[ElpisImeDiag] WEB_JS '+JSON.stringify(payload));}catch(e){}"
+                + "try{if(window.ElpisImeDiagnostics){"
+                + "window.ElpisImeDiagnostics.record(JSON.stringify(payload));"
+                + "}}catch(e){}"
+                + "};"
+                + "window.__elpisImeDiagSnapshot=snapshot;"
+                + "if(!window.__elpisImeDiagListeners){"
+                + "window.__elpisImeDiagListeners=true;"
+                + "window.addEventListener('resize',function(){snapshot('RESIZE_EVENT');});"
+                + "if(window.visualViewport){"
+                + "window.visualViewport.addEventListener('resize',function(){snapshot('VISUAL_VIEWPORT_RESIZE');});"
+                + "window.visualViewport.addEventListener('scroll',function(){snapshot('VISUAL_VIEWPORT_SCROLL');});"
+                + "}}"
+                + "snapshot('" + jsState + "');"
+                + "})()";
+        webView.evaluateJavascript(script, null);
+    }
+
+    private static String viewHierarchy(View leaf) {
+        StringBuilder result = new StringBuilder();
+        View current = leaf;
+        int depth = 0;
+        while (current != null && depth++ < 16) {
+            if (result.length() > 0) {
+                result.append(" <- ");
+            }
+            result.append(viewMetrics(current));
+            ViewParent parent = current.getParent();
+            current = parent instanceof View ? (View) parent : null;
+        }
+        return result.toString();
+    }
+
+    private static String viewMetrics(View view) {
+        if (view == null) {
+            return "null";
+        }
+        return view.getClass().getName()
+                + "{measuredHeight=" + view.getMeasuredHeight()
+                + ",height=" + view.getHeight()
+                + ",paddingBottom=" + view.getPaddingBottom() + "}";
+    }
+
+    private static String className(View view) {
+        return view == null ? "null" : view.getClass().getName();
+    }
+
+    private static int measuredHeight(View view) {
+        return view == null ? -1 : view.getMeasuredHeight();
+    }
+
+    private static int height(View view) {
+        return view == null ? -1 : view.getHeight();
+    }
+
+    private static int paddingBottom(View view) {
+        return view == null ? -1 : view.getPaddingBottom();
+    }
+
+    private static final class ImeDiagnosticsBridge {
+        @JavascriptInterface
+        public void record(String payload) {
+            Log.i(IME_DIAGNOSTICS_TAG, "WEB_JS " + payload);
+        }
     }
     private void configureTopStatusBar() {
         Window window = getWindow();
