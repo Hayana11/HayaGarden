@@ -207,18 +207,28 @@ public class MainActivity extends BridgeActivity {
         if (hmsDiagnosticView == null) {
             return;
         }
+        HmsActivityStore.State state = hmsActivityStore == null
+                ? null
+                : hmsActivityStore.snapshot();
+        String registration = state == null || state.registrationState == null
+                ? "failed"
+                : state.registrationState;
+        String lastError = state == null || state.lastErrorCode == null
+                ? "--"
+                : state.lastErrorCode;
         if (hmsActivityStore == null || !hmsActivityStore.hasPermission()) {
             hmsDiagnosticView.setText(
                     "HMS: permission unavailable\n"
                             + "raw: UNKNOWN\n"
                             + "p: -1\n"
                             + "age: --\n"
-                            + "source: none"
+                            + "source: none\n"
+                            + "registration: " + registration + "\n"
+                            + "lastErrorCode: " + lastError
             );
             return;
         }
 
-        HmsActivityStore.State state = hmsActivityStore.snapshot();
         long now = System.currentTimeMillis();
         long ageMs = state.sampledAt > 0L ? now - state.sampledAt : -1L;
         boolean fresh = state.sampledAt > 0L
@@ -237,7 +247,9 @@ public class MainActivity extends BridgeActivity {
                         + "raw: " + raw + "\n"
                         + "p: " + state.possibility + "\n"
                         + "age: " + age + "\n"
-                        + "source: " + source
+                        + "source: " + source + "\n"
+                        + "registration: " + registration + "\n"
+                        + "lastErrorCode: " + lastError
         );
     }
 
