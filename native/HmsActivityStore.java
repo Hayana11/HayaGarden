@@ -16,7 +16,6 @@ import com.huawei.hms.location.ActivityIdentificationResponse;
 import com.huawei.hms.location.ActivityIdentificationService;
 
 import java.util.List;
-import java.util.Locale;
 
 /**
  * Independent HMS activity-identification state.
@@ -125,7 +124,7 @@ public final class HmsActivityStore {
 
     /**
      * Called only by the native HMS callback. ActivityIdentificationData
-     * exposes activity and possibility; when no event timestamp exists, the
+     * exposes numeric activity and possibility; when no event timestamp exists, the
      * native callback receipt time is the authoritative observation time.
      */
     static void handleIntent(Context context, Intent intent) {
@@ -148,7 +147,7 @@ public final class HmsActivityStore {
                     if (item == null) {
                         continue;
                     }
-                    String raw = item.getIdentificationActivity();
+                    int raw = item.getIdentificationActivity();
                     String mapped = mapActivity(raw);
                     if (mapped == null) {
                         continue;
@@ -156,7 +155,7 @@ public final class HmsActivityStore {
                     int possibility = item.getPossibility();
                     if (possibility > bestPossibility) {
                         bestActivity = mapped;
-                        bestRaw = raw == null ? "UNKNOWN" : raw;
+                        bestRaw = Integer.toString(raw);
                         bestPossibility = possibility;
                     }
                 }
@@ -172,27 +171,20 @@ public final class HmsActivityStore {
         ));
     }
 
-    private static String mapActivity(String raw) {
-        if (raw == null) {
-            return null;
-        }
-        String value = raw.trim().toUpperCase(Locale.ROOT);
-        if (value.startsWith("BEHAVIOR_")) {
-            value = value.substring("BEHAVIOR_".length());
-        }
-        switch (value) {
-            case "STILL":
+    private static String mapActivity(int raw) {
+        switch (raw) {
+            case ActivityIdentificationData.STILL:
                 return "still";
-            case "WALKING":
+            case ActivityIdentificationData.WALKING:
                 return "walking";
-            case "RUNNING":
+            case ActivityIdentificationData.RUNNING:
                 return "running";
-            case "ON_BICYCLE":
-            case "BIKE":
+            case ActivityIdentificationData.BIKE:
                 return "cycling";
-            case "IN_VEHICLE":
-            case "VEHICLE":
+            case ActivityIdentificationData.VEHICLE:
                 return "in_vehicle";
+            case ActivityIdentificationData.FOOT:
+                return "walking";
             default:
                 return null;
         }
