@@ -10,6 +10,7 @@ import android.os.Build;
 
 import com.huawei.hmf.tasks.OnFailureListener;
 import com.huawei.hmf.tasks.OnSuccessListener;
+import com.huawei.hms.common.ApiException;
 import com.huawei.hms.location.ActivityIdentification;
 import com.huawei.hms.location.ActivityIdentificationData;
 import com.huawei.hms.location.ActivityIdentificationResponse;
@@ -42,6 +43,8 @@ public final class HmsActivityStore {
     private PendingIntent pendingIntent;
     private boolean registering;
     private boolean registered;
+    private String registrationState = "pending";
+    private String lastErrorCode;
 
     public HmsActivityStore(Context context) {
         this.context = context.getApplicationContext();
@@ -53,9 +56,16 @@ public final class HmsActivityStore {
      * onPause shutdown; PendingIntent delivery is the background path.
      */
     public synchronized void startIfPermitted() {
-        if (registered || registering || !hasPermission()) {
+        if (registered || registering) {
             return;
         }
+        if (!hasPermission()) {
+            registrationState = "failed";
+            lastErrorCode = "PERMISSION_DENIED";
+            return;
+        }
+        registrationState = "pending";
+        lastErrorCode = null;
         try {
             service = ActivityIdentification.getService(context);
             pendingIntent = createPendingIntent(context);
@@ -67,6 +77,8 @@ public final class HmsActivityStore {
                             synchronized (HmsActivityStore.this) {
                                 registering = false;
                                 registered = true;
+                                registrationState = "registered";
+                                lastErrorCode = null;
                             }
                         }
                     })
@@ -76,12 +88,16 @@ public final class HmsActivityStore {
                             synchronized (HmsActivityStore.this) {
                                 registering = false;
                                 registered = false;
+                                registrationState = "failed";
+                                lastErrorCode = safeErrorCode(ignored);
                             }
                         }
                     });
         } catch (RuntimeException ignored) {
             registering = false;
             registered = false;
+            registrationState = "failed";
+            lastErrorCode = "HMS_SERVICE_UNAVAILABLE";
         }
     }
 
@@ -96,6 +112,8 @@ public final class HmsActivityStore {
         }
         registering = false;
         registered = false;
+        registrationState = "pending";
+        lastErrorCode = null;
     }
 
     public boolean hasPermission() {
@@ -118,8 +136,16 @@ public final class HmsActivityStore {
         return PendingIntent.getBroadcast(context, REQUEST_CODE, intent, flags);
     }
 
-    public State snapshot() {
-        return readState(prefs);
+    public synchronized State snapshot() {
+        State persisted = readState(prefs);
+        return new State(
+                persisted.userActivity,
+                persisted.rawActivity,
+                persisted.possibility,
+                persisted.sampledAt,
+                registrationState,
+                lastErrorCode
+        );
     }
 
     /**
@@ -200,12 +226,21 @@ public final class HmsActivityStore {
                 .commit();
     }
 
+    private static String safeErrorCode(Exception error) {
+        if (error instanceof ApiException) {
+            return "HMS_STATUS_" + ((ApiException) error).getStatusCode();
+        }
+        return "HMS_REGISTRATION_FAILED";
+    }
+
     private static State readState(SharedPreferences prefs) {
         return new State(
                 prefs.getString(KEY_ACTIVITY, "unknown"),
                 prefs.getString(KEY_RAW_ACTIVITY, "UNKNOWN"),
                 prefs.getInt(KEY_POSSIBILITY, -1),
-                prefs.getLong(KEY_SAMPLED_AT, 0L)
+                prefs.getLong(KEY_SAMPLED_AT, 0L),
+                "pending",
+                null
         );
     }
 
@@ -214,12 +249,23 @@ public final class HmsActivityStore {
         final String rawActivity;
         final int possibility;
         final long sampledAt;
+        final String registrationState;
+        final String lastErrorCode;
 
-        State(String userActivity, String rawActivity, int possibility, long sampledAt) {
+        State(
+                String userActivity,
+                String rawActivity,
+                int possibility,
+                long sampledAt,
+                String registrationState,
+                String lastErrorCode
+        ) {
             this.userActivity = userActivity;
             this.rawActivity = rawActivity;
             this.possibility = possibility;
             this.sampledAt = sampledAt;
+            this.registrationState = registrationState;
+            this.lastErrorCode = lastErrorCode;
         }
     }
 }
