@@ -50,7 +50,19 @@ jobs:
       - name: Sync Capacitor
         run: npx cap sync android
 
-      - name: Apply P2C.1 Physical (composes P2B)
+      - name: Inject AGConnect config when configured
+        env:
+          AGCONNECT_SERVICES_JSON_B64: ${{ secrets.AGCONNECT_SERVICES_JSON_B64 }}
+        run: |
+          if [ -z "$AGCONNECT_SERVICES_JSON_B64" ]; then
+            echo "AGCONNECT_SERVICES_JSON_B64 is not configured; HMS runtime will remain unavailable until configured"
+            exit 0
+          fi
+          printf '%s' "$AGCONNECT_SERVICES_JSON_B64" | base64 --decode > android/app/agconnect-services.json
+          chmod 600 android/app/agconnect-services.json
+          python3 -m json.tool android/app/agconnect-services.json >/dev/null
+
+      - name: Apply P2C.1 Physical + HMS Activity
         run: bash scripts/apply-p2c1-physical.sh
 
       - name: P2B contract test
@@ -58,6 +70,9 @@ jobs:
 
       - name: P2C.1 contract test
         run: bash scripts/test-p2c1-physical.sh
+
+      - name: HMS Activity R1 contract test
+        run: bash scripts/test-hms-activity-r1.sh
 
       - name: Generate app icons
         run: |
