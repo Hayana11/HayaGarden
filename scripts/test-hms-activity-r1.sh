@@ -28,8 +28,8 @@ grep -q 'getDataFromIntent' "$STORE" || fail "HMS response parsing missing"
 grep -q 'getIdentificationActivity' "$STORE" || fail "numeric HMS activity field missing"
 grep -q 'ActivityIdentificationData.STILL' "$STORE" || fail "HMS numeric activity mapping missing"
 FOOT_MAPPING="$(sed -n '/case ActivityIdentificationData.FOOT:/,/default:/p' "$STORE")"
-printf '%s\\n' "$FOOT_MAPPING" | grep -q 'return "unknown"' || fail "ambiguous FOOT/ON_FOOT must map to unknown"
-if printf '%s\\n' "$FOOT_MAPPING" | grep -q 'return "walking"'; then
+printf '%s\n' "$FOOT_MAPPING" | grep -q 'return "unknown"' || fail "ambiguous FOOT/ON_FOOT must map to unknown"
+if printf '%s\n' "$FOOT_MAPPING" | grep -q 'return "walking"'; then
   fail "ambiguous FOOT/ON_FOOT must not map to walking"
 fi
 pass "ambiguous FOOT/ON_FOOT maps to unknown"
