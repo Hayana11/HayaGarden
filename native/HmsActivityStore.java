@@ -184,7 +184,7 @@ public final class HmsActivityStore {
             case ActivityIdentificationData.VEHICLE:
                 return "in_vehicle";
             case ActivityIdentificationData.FOOT:
-                return "walking";
+                return "unknown";
             default:
                 return null;
         }
