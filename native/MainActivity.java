@@ -3,24 +3,24 @@ package xyz.lovestyle.home.canary;
 import android.Manifest;
 import android.content.Intent;
 import android.content.pm.PackageManager;
+import android.os.Build;
 import android.os.Bundle;
 import android.webkit.WebView;
 import androidx.activity.OnBackPressedCallback;
 import com.getcapacitor.Bridge;
 import com.getcapacitor.BridgeActivity;
 
-/**
- * Phase 2C.1 Canary activity: P1B back semantics, P2A ElpisNative,
- * P2B notifications, and the foreground-live P2C.1 physical cache.
- */
 public class MainActivity extends BridgeActivity {
+    private static final int REQUEST_HMS_ACTIVITY_PERMISSION = 19042;
     private PhysicalStateStore physicalStateStore;
+    private HmsActivityStore hmsActivityStore;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
         physicalStateStore = new PhysicalStateStore(getApplicationContext());
+        hmsActivityStore = new HmsActivityStore(getApplicationContext());
 
         Bridge bridge = getBridge();
         WebView webView = bridge != null ? bridge.getWebView() : null;
@@ -37,6 +37,10 @@ public class MainActivity extends BridgeActivity {
                 new PhysicalBridge(physicalStateStore),
                 "ElpisPhysical"
             );
+            webView.addJavascriptInterface(
+                new HmsActivityBridge(hmsActivityStore),
+                "ElpisActivity"
+            );
         }
 
         NotificationSupport.createChannel(this);
@@ -44,6 +48,7 @@ public class MainActivity extends BridgeActivity {
             NotificationSupport.ensurePollingScheduled(this);
         }
         handleNotificationIntent(getIntent());
+        requestHmsActivityPermissionIfNeeded();
 
         getOnBackPressedDispatcher().addCallback(
             this,
@@ -70,6 +75,9 @@ public class MainActivity extends BridgeActivity {
         if (physicalStateStore != null) {
             physicalStateStore.start();
         }
+        if (hmsActivityStore != null) {
+            hmsActivityStore.startIfPermitted();
+        }
     }
 
     @Override
@@ -77,6 +85,7 @@ public class MainActivity extends BridgeActivity {
         if (physicalStateStore != null) {
             physicalStateStore.stop();
         }
+        // HMS updates intentionally remain registered while backgrounded.
         super.onPause();
     }
 
@@ -91,11 +100,37 @@ public class MainActivity extends BridgeActivity {
     public void onRequestPermissionsResult(
             int requestCode, String[] permissions, int[] grantResults) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        if (requestCode == REQUEST_HMS_ACTIVITY_PERMISSION
+                && hmsActivityStore != null
+                && grantResults.length > 0
+                && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+            hmsActivityStore.startIfPermitted();
+        }
         if (requestCode == NotificationSupport.REQUEST_NOTIFICATION_PERMISSION
-                && android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU
+                && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
                 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)
                     == PackageManager.PERMISSION_GRANTED) {
             NotificationSupport.ensurePollingScheduled(this);
+        }
+    }
+
+    private void requestHmsActivityPermissionIfNeeded() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
+            if (hmsActivityStore != null) {
+                hmsActivityStore.startIfPermitted();
+            }
+            return;
+        }
+        if (checkSelfPermission(Manifest.permission.ACTIVITY_RECOGNITION)
+                != PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(
+                    new String[]{Manifest.permission.ACTIVITY_RECOGNITION},
+                    REQUEST_HMS_ACTIVITY_PERMISSION
+            );
+            return;
+        }
+        if (hmsActivityStore != null) {
+            hmsActivityStore.startIfPermitted();
         }
     }
 
