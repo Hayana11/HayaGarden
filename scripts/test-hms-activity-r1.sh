@@ -38,7 +38,7 @@ grep -q '"ElpisPhysical"' "$MAIN" || fail "existing physical motion bridge was r
 grep -q 'activitySampledAt' "$BRIDGE" || fail "activitySampledAt missing"
 grep -q 'System.currentTimeMillis' "$STORE" || fail "native callback timestamp missing"
 grep -q 'ElpisActivity' "$MAIN" || fail "HMS JS bridge not injected"
-grep -q 'BuildConfig.DEBUG' "$MAIN" || fail "diagnostic overlay is not debug guarded"
+grep -q 'ApplicationInfo.FLAG_DEBUGGABLE' "$MAIN" || fail "diagnostic overlay is not debug guarded"
 grep -q 'hmsActivityStore.snapshot()' "$MAIN" || fail "diagnostic overlay must read HmsActivityStore.snapshot()"
 grep -q 'HMS_DIAGNOSTIC_REFRESH_MS = 1_500L' "$MAIN" || fail "diagnostic refresh interval missing"
 grep -q 'removeCallbacks(hmsDiagnosticRefresh)' "$MAIN" || fail "diagnostic polling cleanup missing"
