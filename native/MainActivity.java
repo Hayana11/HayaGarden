@@ -3,6 +3,7 @@ package xyz.lovestyle.home.canary;
 import android.Manifest;
 import android.content.Intent;
 import android.content.pm.PackageManager;
+import android.content.pm.ApplicationInfo;
 import android.graphics.Color;
 import android.graphics.drawable.GradientDrawable;
 import android.os.Build;
@@ -113,7 +114,7 @@ public class MainActivity extends BridgeActivity {
     }
 
     @Override
-    protected void onDestroy() {
+    public void onDestroy() {
         stopHmsDiagnosticPolling();
         if (hmsDiagnosticView != null) {
             ViewGroup parent = (ViewGroup) hmsDiagnosticView.getParent();
@@ -150,8 +151,12 @@ public class MainActivity extends BridgeActivity {
         }
     }
 
+    private boolean isDebugDiagnosticEnabled() {
+        return (getApplicationInfo().flags & ApplicationInfo.FLAG_DEBUGGABLE) != 0;
+    }
+
     private void installHmsDiagnosticOverlay() {
-        if (!BuildConfig.DEBUG || hmsDiagnosticView != null) {
+        if (!isDebugDiagnosticEnabled() || hmsDiagnosticView != null) {
             return;
         }
 
@@ -181,7 +186,7 @@ public class MainActivity extends BridgeActivity {
     }
 
     private void startHmsDiagnosticPolling() {
-        if (!BuildConfig.DEBUG || hmsDiagnosticView == null) {
+        if (!isDebugDiagnosticEnabled() || hmsDiagnosticView == null) {
             return;
         }
         hmsDiagnosticView.removeCallbacks(hmsDiagnosticRefresh);
