@@ -38,6 +38,14 @@ grep -q '"ElpisPhysical"' "$MAIN" || fail "existing physical motion bridge was r
 grep -q 'activitySampledAt' "$BRIDGE" || fail "activitySampledAt missing"
 grep -q 'System.currentTimeMillis' "$STORE" || fail "native callback timestamp missing"
 grep -q 'ElpisActivity' "$MAIN" || fail "HMS JS bridge not injected"
+grep -q 'BuildConfig.DEBUG' "$MAIN" || fail "diagnostic overlay is not debug guarded"
+grep -q 'hmsActivityStore.snapshot()' "$MAIN" || fail "diagnostic overlay must read HmsActivityStore.snapshot()"
+grep -q 'HMS_DIAGNOSTIC_REFRESH_MS = 1_500L' "$MAIN" || fail "diagnostic refresh interval missing"
+grep -q 'removeCallbacks(hmsDiagnosticRefresh)' "$MAIN" || fail "diagnostic polling cleanup missing"
+if grep -q 'createActivityIdentificationUpdates' "$MAIN"; then
+  fail "MainActivity must not register a second HMS activity update stream"
+fi
+pass "debug diagnostic reads existing state without a second HMS registration"
 grep -q 'hmsActivityStore.startIfPermitted' "$MAIN" || fail "HMS start hook missing"
 if grep -q 'hmsActivityStore.stop' "$MAIN"; then
   fail "HMS updates must not stop in onPause"
