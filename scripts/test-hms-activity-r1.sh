@@ -44,7 +44,7 @@ for permission in ACCESS_FINE_LOCATION ACCESS_COARSE_LOCATION ACCESS_BACKGROUND_
 done
 grep -q 'android.permission.ACTIVITY_RECOGNITION' "$PATCH" || fail "Android 10+ permission missing"
 grep -q 'com.huawei.hms.permission.ACTIVITY_RECOGNITION' "$PATCH" || fail "legacy permission missing"
-grep -q 'com.huawei.hms:location:6.4.0.300' "$PATCH" || fail "SDK version missing"
+grep -q 'HMS_LOCATION_VERSION="6.4.0.300"' "$PATCH" || fail "SDK version missing"
 grep -q 'AGCONNECT_SERVICES_JSON_B64' "$ROOT/.github/workflows/build-apk.yml" || fail "secure AGConnect injection missing"
 if [[ -f "$ROOT/agconnect-services.json" || -f "$ROOT/android/app/agconnect-services.json" ]]; then
   fail "AGConnect config must not be committed"
