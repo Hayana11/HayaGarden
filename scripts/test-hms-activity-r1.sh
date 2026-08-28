@@ -25,6 +25,10 @@ for token in ActivityIdentificationService createActivityIdentificationUpdates P
   grep -q "$token" "$STORE" || fail "HMS store missing $token"
 done
 grep -q 'getDataFromIntent' "$STORE" || fail "HMS response parsing missing"
+grep -q 'getIdentificationActivity' "$STORE" || fail "numeric HMS activity field missing"
+grep -q 'ActivityIdentificationData.STILL' "$STORE" || fail "HMS numeric activity mapping missing"
+grep -q 'PhysicalStateStore' "$MAIN" || fail "existing physical motion store was removed"
+grep -q '"ElpisPhysical"' "$MAIN" || fail "existing physical motion bridge was removed"
 grep -q 'activitySampledAt' "$BRIDGE" || fail "activitySampledAt missing"
 grep -q 'System.currentTimeMillis' "$STORE" || fail "native callback timestamp missing"
 grep -q 'ElpisActivity' "$MAIN" || fail "HMS JS bridge not injected"
