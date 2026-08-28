@@ -109,7 +109,7 @@ for needle in OnBackPressedCallback 'canGoBack()' 'goBack()'; do
 done
 
 # ── F. MainActivity forbidden lifecycle / legacy calls ───────────
-for bad in setTextZoom startForegroundService requestPermissions AppTracker \
+for bad in setTextZoom startForegroundService AppTracker \
            'reload(' 'loadUrl(' clearCache clearHistory; do
   if grep -qF "$bad" "$MA"; then
     fail "MainActivity must not contain: $bad"
@@ -118,7 +118,13 @@ for bad in setTextZoom startForegroundService requestPermissions AppTracker \
   fi
 done
 
-if grep -q 'requestPermissions' "$MA" && ! grep -q 'ACTIVITY_RECOGNITION' "$MA"; then\n  fail "requestPermissions may only be used for Activity Recognition in this canary"\nelse\n  pass "permission request is limited to Activity Recognition"\nfi\n\n# ── F2. Usage Access / getScreenTime error classification (narrow) ─
+if grep -q 'requestPermissions' "$MA" && ! grep -q 'ACTIVITY_RECOGNITION' "$MA"; then
+  fail "requestPermissions may only be used for Activity Recognition in this canary"
+else
+  pass "permission request is limited to Activity Recognition"
+fi
+
+# ── F2. Usage Access / getScreenTime error classification (narrow) ─
 # hasUsageAccess: MODE_ALLOWED only; must NOT probe recent usage records.
 if grep -q 'MODE_ALLOWED' "$NB" && grep -q 'OPSTR_GET_USAGE_STATS' "$NB"; then
   pass "hasUsageAccess gates on MODE_ALLOWED + OPSTR_GET_USAGE_STATS"
