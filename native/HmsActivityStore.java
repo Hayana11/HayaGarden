@@ -193,7 +193,12 @@ public final class HmsActivityStore {
         }
 
         persistState(context.getApplicationContext(), new State(
-                bestActivity, bestRaw, bestPossibility, callbackAt
+                bestActivity,
+                bestRaw,
+                bestPossibility,
+                callbackAt,
+                "pending",
+                null
         ));
     }
 
