@@ -7,8 +7,6 @@ import android.graphics.Color;
 import android.graphics.drawable.GradientDrawable;
 import android.os.Build;
 import android.os.Bundle;
-import android.os.Handler;
-import android.os.Looper;
 import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.View;
@@ -26,7 +24,6 @@ public class MainActivity extends BridgeActivity {
     private PhysicalStateStore physicalStateStore;
     private HmsActivityStore hmsActivityStore;
     private TextView hmsDiagnosticView;
-    private Handler hmsDiagnosticHandler;
     private final Runnable hmsDiagnosticRefresh = new Runnable() {
         @Override
         public void run() {
@@ -34,7 +31,7 @@ public class MainActivity extends BridgeActivity {
                 return;
             }
             refreshHmsDiagnosticText();
-            hmsDiagnosticHandler.postDelayed(this, HMS_DIAGNOSTIC_REFRESH_MS);
+            hmsDiagnosticView.postDelayed(this, HMS_DIAGNOSTIC_REFRESH_MS);
         }
     };
 
@@ -158,7 +155,6 @@ public class MainActivity extends BridgeActivity {
             return;
         }
 
-        hmsDiagnosticHandler = new Handler(Looper.getMainLooper());
         TextView view = new TextView(this);
         view.setTextColor(Color.WHITE);
         view.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11);
@@ -185,21 +181,20 @@ public class MainActivity extends BridgeActivity {
     }
 
     private void startHmsDiagnosticPolling() {
-        if (!BuildConfig.DEBUG || hmsDiagnosticHandler == null
-                || hmsDiagnosticView == null) {
+        if (!BuildConfig.DEBUG || hmsDiagnosticView == null) {
             return;
         }
-        hmsDiagnosticHandler.removeCallbacks(hmsDiagnosticRefresh);
+        hmsDiagnosticView.removeCallbacks(hmsDiagnosticRefresh);
         refreshHmsDiagnosticText();
-        hmsDiagnosticHandler.postDelayed(
+        hmsDiagnosticView.postDelayed(
                 hmsDiagnosticRefresh,
                 HMS_DIAGNOSTIC_REFRESH_MS
         );
     }
 
     private void stopHmsDiagnosticPolling() {
-        if (hmsDiagnosticHandler != null) {
-            hmsDiagnosticHandler.removeCallbacks(hmsDiagnosticRefresh);
+        if (hmsDiagnosticView != null) {
+            hmsDiagnosticView.removeCallbacks(hmsDiagnosticRefresh);
         }
     }
 
