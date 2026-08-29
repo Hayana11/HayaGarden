@@ -25,6 +25,14 @@ for token in ActivityIdentificationService createActivityIdentificationUpdates P
   grep -q "$token" "$STORE" || fail "HMS store missing $token"
 done
 grep -q 'getDataFromIntent' "$STORE" || fail "HMS response parsing missing"
+grep -q 'PendingIntent.FLAG_MUTABLE' "$STORE" || fail "mutable PendingIntent missing for callback payload delivery"
+grep -q 'Build.VERSION_CODES.S' "$STORE" || fail "PendingIntent mutability must be API-gated"
+if grep -q 'PendingIntent.FLAG_IMMUTABLE' "$STORE"; then
+  fail "HMS callback PendingIntent must not be immutable"
+fi
+for token in callbackReceived intentHasExtras responsePresent activityDataCount; do
+  grep -q "$token" "$STORE" "$MAIN" || fail "safe callback diagnostic missing: $token"
+done
 grep -q 'getIdentificationActivity' "$STORE" || fail "numeric HMS activity field missing"
 grep -q 'ActivityIdentificationData.STILL' "$STORE" || fail "HMS numeric activity mapping missing"
 FOOT_MAPPING="$(sed -n '/case ActivityIdentificationData.FOOT:/,/default:/p' "$STORE")"
