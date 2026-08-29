@@ -228,11 +228,19 @@ public class MainActivity extends BridgeActivity {
         String activityDataCount = state == null
                 ? "0"
                 : Integer.toString(state.activityDataCount);
+        String rawCandidate = state == null
+                ? "-1"
+                : Integer.toString(state.rawCandidate);
+        String rawPossibility = state == null
+                ? "-1"
+                : Integer.toString(state.rawPossibility);
         if (hmsActivityStore == null || !hmsActivityStore.hasPermission()) {
             hmsDiagnosticView.setText(
                     "HMS: permission unavailable\n"
                             + "raw: UNKNOWN\n"
                             + "p: -1\n"
+                            + "rawCandidate: " + rawCandidate + "\n"
+                            + "rawPossibility: " + rawPossibility + "\n"
                             + "age: --\n"
                             + "source: none\n"
                             + "registration: " + registration + "\n"
@@ -262,6 +270,8 @@ public class MainActivity extends BridgeActivity {
                 "HMS: " + activity + "\n"
                         + "raw: " + raw + "\n"
                         + "p: " + state.possibility + "\n"
+                        + "rawCandidate: " + rawCandidate + "\n"
+                        + "rawPossibility: " + rawPossibility + "\n"
                         + "age: " + age + "\n"
                         + "source: " + source + "\n"
                         + "registration: " + registration + "\n"
