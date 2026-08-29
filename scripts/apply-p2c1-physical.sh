@@ -48,7 +48,7 @@ done
 if [[ -f "$ROOT/android/app/agconnect-services.json" ]]; then
   if ! grep -Fq "com.huawei.agconnect:agcp" "$ROOT_GRADLE"; then
     if grep -q "buildscript" "$ROOT_GRADLE"; then
-      sed -i '/dependencies[[:space:]]*{/a\        classpath "com.huawei.agconnect:agcp:1.6.5.300"' "$ROOT_GRADLE"
+      sed -i '/dependencies[[:space:]]*{/a\        classpath "com.huawei.agconnect:agcp:1.9.6.300"' "$ROOT_GRADLE"
     else
       echo "AGConnect config present but generated root Gradle has no buildscript block; plugin wiring skipped" >&2
     fi
