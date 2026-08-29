@@ -30,6 +30,14 @@ public final class HmsActivityBridge {
                     state.sampledAt > 0L ? state.sampledAt : JSONObject.NULL
             );
             result.put("source", fresh ? "hms" : "none");
+            result.put("registration", state.registrationState);
+            result.put("lastErrorCode", state.lastErrorCode == null ? JSONObject.NULL : state.lastErrorCode);
+            result.put("callbackReceived", state.callbackReceived);
+            result.put("intentHasExtras", state.intentHasExtras);
+            result.put("responsePresent", state.responsePresent);
+            result.put("activityDataCount", state.activityDataCount);
+            result.put("rawCandidate", state.rawCandidate);
+            result.put("rawPossibility", state.rawPossibility);
             return result.toString();
         } catch (JSONException impossible) {
             return "{\"schemaVersion\":1,\"available\":false,"
