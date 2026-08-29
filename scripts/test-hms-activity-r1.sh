@@ -30,7 +30,7 @@ grep -q 'Build.VERSION_CODES.S' "$STORE" || fail "PendingIntent mutability must 
 if grep -q 'PendingIntent.FLAG_IMMUTABLE' "$STORE"; then
   fail "HMS callback PendingIntent must not be immutable"
 fi
-for token in callbackReceived intentHasExtras responsePresent activityDataCount; do
+for token in callbackReceived intentHasExtras responsePresent activityDataCount rawCandidate rawPossibility; do
   grep -q "$token" "$STORE" "$MAIN" || fail "safe callback diagnostic missing: $token"
 done
 grep -q 'getIdentificationActivity' "$STORE" || fail "numeric HMS activity field missing"
