@@ -33,6 +33,10 @@ public final class HmsActivityStore {
     private static final String KEY_RAW_ACTIVITY = "raw_activity";
     private static final String KEY_POSSIBILITY = "possibility";
     private static final String KEY_SAMPLED_AT = "sampled_at";
+    private static final String KEY_CALLBACK_RECEIVED = "callback_received";
+    private static final String KEY_INTENT_HAS_EXTRAS = "intent_has_extras";
+    private static final String KEY_RESPONSE_PRESENT = "response_present";
+    private static final String KEY_ACTIVITY_DATA_COUNT = "activity_data_count";
     private static final int REQUEST_CODE = 19041;
     private static final String LEGACY_PERMISSION =
             "com.huawei.hms.permission.ACTIVITY_RECOGNITION";
@@ -130,8 +134,8 @@ public final class HmsActivityStore {
         Intent intent = new Intent(context, HmsActivityReceiver.class);
         intent.setAction(ACTION_ACTIVITY_IDENTIFICATION);
         int flags = PendingIntent.FLAG_UPDATE_CURRENT;
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            flags |= PendingIntent.FLAG_IMMUTABLE;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            flags |= PendingIntent.FLAG_MUTABLE;
         }
         return PendingIntent.getBroadcast(context, REQUEST_CODE, intent, flags);
     }
@@ -144,7 +148,11 @@ public final class HmsActivityStore {
                 persisted.possibility,
                 persisted.sampledAt,
                 registrationState,
-                lastErrorCode
+                lastErrorCode,
+                persisted.callbackReceived,
+                persisted.intentHasExtras,
+                persisted.responsePresent,
+                persisted.activityDataCount
         );
     }
 
@@ -162,12 +170,19 @@ public final class HmsActivityStore {
         String bestActivity = "unknown";
         String bestRaw = "UNKNOWN";
         int bestPossibility = -1;
+        boolean callbackReceived = true;
+        boolean intentHasExtras = intent.getExtras() != null
+                && !intent.getExtras().isEmpty();
+        boolean responsePresent = false;
+        int activityDataCount = 0;
 
         try {
             ActivityIdentificationResponse response =
                     ActivityIdentificationResponse.getDataFromIntent(intent);
+            responsePresent = response != null;
             List<ActivityIdentificationData> data =
                     response == null ? null : response.getActivityIdentificationDatas();
+            activityDataCount = data == null ? 0 : data.size();
             if (data != null) {
                 for (ActivityIdentificationData item : data) {
                     if (item == null) {
@@ -198,7 +213,11 @@ public final class HmsActivityStore {
                 bestPossibility,
                 callbackAt,
                 "pending",
-                null
+                null,
+                callbackReceived,
+                intentHasExtras,
+                responsePresent,
+                activityDataCount
         ));
     }
 
@@ -228,6 +247,10 @@ public final class HmsActivityStore {
                 .putString(KEY_RAW_ACTIVITY, state.rawActivity)
                 .putInt(KEY_POSSIBILITY, state.possibility)
                 .putLong(KEY_SAMPLED_AT, state.sampledAt)
+                .putBoolean(KEY_CALLBACK_RECEIVED, state.callbackReceived)
+                .putBoolean(KEY_INTENT_HAS_EXTRAS, state.intentHasExtras)
+                .putBoolean(KEY_RESPONSE_PRESENT, state.responsePresent)
+                .putInt(KEY_ACTIVITY_DATA_COUNT, state.activityDataCount)
                 .commit();
     }
 
@@ -245,7 +268,11 @@ public final class HmsActivityStore {
                 prefs.getInt(KEY_POSSIBILITY, -1),
                 prefs.getLong(KEY_SAMPLED_AT, 0L),
                 "pending",
-                null
+                null,
+                prefs.getBoolean(KEY_CALLBACK_RECEIVED, false),
+                prefs.getBoolean(KEY_INTENT_HAS_EXTRAS, false),
+                prefs.getBoolean(KEY_RESPONSE_PRESENT, false),
+                prefs.getInt(KEY_ACTIVITY_DATA_COUNT, 0)
         );
     }
 
@@ -256,6 +283,10 @@ public final class HmsActivityStore {
         final long sampledAt;
         final String registrationState;
         final String lastErrorCode;
+        final boolean callbackReceived;
+        final boolean intentHasExtras;
+        final boolean responsePresent;
+        final int activityDataCount;
 
         State(
                 String userActivity,
@@ -263,7 +294,11 @@ public final class HmsActivityStore {
                 int possibility,
                 long sampledAt,
                 String registrationState,
-                String lastErrorCode
+                String lastErrorCode,
+                boolean callbackReceived,
+                boolean intentHasExtras,
+                boolean responsePresent,
+                int activityDataCount
         ) {
             this.userActivity = userActivity;
             this.rawActivity = rawActivity;
@@ -271,6 +306,10 @@ public final class HmsActivityStore {
             this.sampledAt = sampledAt;
             this.registrationState = registrationState;
             this.lastErrorCode = lastErrorCode;
+            this.callbackReceived = callbackReceived;
+            this.intentHasExtras = intentHasExtras;
+            this.responsePresent = responsePresent;
+            this.activityDataCount = activityDataCount;
         }
     }
 }
