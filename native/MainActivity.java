@@ -216,6 +216,18 @@ public class MainActivity extends BridgeActivity {
         String lastError = state == null || state.lastErrorCode == null
                 ? "--"
                 : state.lastErrorCode;
+        String callbackReceived = state != null && state.callbackReceived
+                ? "yes"
+                : "no";
+        String intentHasExtras = state != null && state.intentHasExtras
+                ? "yes"
+                : "no";
+        String responsePresent = state != null && state.responsePresent
+                ? "yes"
+                : "no";
+        String activityDataCount = state == null
+                ? "0"
+                : Integer.toString(state.activityDataCount);
         if (hmsActivityStore == null || !hmsActivityStore.hasPermission()) {
             hmsDiagnosticView.setText(
                     "HMS: permission unavailable\n"
@@ -224,7 +236,11 @@ public class MainActivity extends BridgeActivity {
                             + "age: --\n"
                             + "source: none\n"
                             + "registration: " + registration + "\n"
-                            + "lastErrorCode: " + lastError
+                            + "lastErrorCode: " + lastError + "\n"
+                            + "callbackReceived: " + callbackReceived + "\n"
+                            + "intentHasExtras: " + intentHasExtras + "\n"
+                            + "responsePresent: " + responsePresent + "\n"
+                            + "activityDataCount: " + activityDataCount
             );
             return;
         }
@@ -249,7 +265,11 @@ public class MainActivity extends BridgeActivity {
                         + "age: " + age + "\n"
                         + "source: " + source + "\n"
                         + "registration: " + registration + "\n"
-                        + "lastErrorCode: " + lastError
+                        + "lastErrorCode: " + lastError + "\n"
+                        + "callbackReceived: " + callbackReceived + "\n"
+                        + "intentHasExtras: " + intentHasExtras + "\n"
+                        + "responsePresent: " + responsePresent + "\n"
+                        + "activityDataCount: " + activityDataCount
         );
     }
 
