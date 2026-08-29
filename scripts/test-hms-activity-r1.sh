@@ -46,18 +46,20 @@ grep -q '"ElpisPhysical"' "$MAIN" || fail "existing physical motion bridge was r
 grep -q 'activitySampledAt' "$BRIDGE" || fail "activitySampledAt missing"
 grep -q 'System.currentTimeMillis' "$STORE" || fail "native callback timestamp missing"
 grep -q 'ElpisActivity' "$MAIN" || fail "HMS JS bridge not injected"
-grep -q 'ApplicationInfo.FLAG_DEBUGGABLE' "$MAIN" || fail "diagnostic overlay is not debug guarded"
 grep -q 'registrationState' "$STORE" || fail "HMS registration state missing"
 grep -q 'lastErrorCode' "$STORE" || fail "safe HMS error code missing"
-grep -q '"registration: "' "$MAIN" || fail "registration status not displayed"
-grep -q '"lastErrorCode: "' "$MAIN" || fail "safe error code not displayed"
-grep -q 'hmsActivityStore.snapshot()' "$MAIN" || fail "diagnostic overlay must read HmsActivityStore.snapshot()"
-grep -q 'HMS_DIAGNOSTIC_REFRESH_MS = 1_500L' "$MAIN" || fail "diagnostic refresh interval missing"
-grep -q 'removeCallbacks(hmsDiagnosticRefresh)' "$MAIN" || fail "diagnostic polling cleanup missing"
+for token in registration lastErrorCode callbackReceived intentHasExtras responsePresent activityDataCount rawCandidate rawPossibility; do
+  grep -q "$token" "$BRIDGE" || fail "safe HMS diagnostic bridge field missing: $token"
+done
+for token in installHmsDiagnosticOverlay hmsDiagnosticView HMS_DIAGNOSTIC_REFRESH_MS startHmsDiagnosticPolling refreshHmsDiagnosticText; do
+  if grep -q "$token" "$MAIN"; then
+    fail "debug HMS floating overlay must be removed: $token"
+  fi
+done
 if grep -q 'createActivityIdentificationUpdates' "$MAIN"; then
   fail "MainActivity must not register a second HMS activity update stream"
 fi
-pass "debug diagnostic reads existing state without a second HMS registration"
+pass "HMS diagnostics are exposed read-only through ElpisActivity; floating overlay removed"
 grep -q 'hmsActivityStore.startIfPermitted' "$MAIN" || fail "HMS start hook missing"
 if grep -q 'hmsActivityStore.stop' "$MAIN"; then
   fail "HMS updates must not stop in onPause"
