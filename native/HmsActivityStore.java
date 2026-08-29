@@ -33,6 +33,8 @@ public final class HmsActivityStore {
     private static final String KEY_RAW_ACTIVITY = "raw_activity";
     private static final String KEY_POSSIBILITY = "possibility";
     private static final String KEY_SAMPLED_AT = "sampled_at";
+    private static final String KEY_RAW_CANDIDATE = "raw_candidate";
+    private static final String KEY_RAW_POSSIBILITY = "raw_possibility";
     private static final String KEY_CALLBACK_RECEIVED = "callback_received";
     private static final String KEY_INTENT_HAS_EXTRAS = "intent_has_extras";
     private static final String KEY_RESPONSE_PRESENT = "response_present";
@@ -149,6 +151,8 @@ public final class HmsActivityStore {
                 persisted.sampledAt,
                 registrationState,
                 lastErrorCode,
+                persisted.rawCandidate,
+                persisted.rawPossibility,
                 persisted.callbackReceived,
                 persisted.intentHasExtras,
                 persisted.responsePresent,
@@ -170,6 +174,8 @@ public final class HmsActivityStore {
         String bestActivity = "unknown";
         String bestRaw = "UNKNOWN";
         int bestPossibility = -1;
+        int rawCandidate = -1;
+        int rawPossibility = -1;
         boolean callbackReceived = true;
         boolean intentHasExtras = intent.getExtras() != null
                 && !intent.getExtras().isEmpty();
@@ -189,11 +195,15 @@ public final class HmsActivityStore {
                         continue;
                     }
                     int raw = item.getIdentificationActivity();
+                    int possibility = item.getPossibility();
+                    if (possibility > rawPossibility) {
+                        rawCandidate = raw;
+                        rawPossibility = possibility;
+                    }
                     String mapped = mapActivity(raw);
                     if (mapped == null) {
                         continue;
                     }
-                    int possibility = item.getPossibility();
                     if (possibility > bestPossibility) {
                         bestActivity = mapped;
                         bestRaw = Integer.toString(raw);
@@ -214,6 +224,8 @@ public final class HmsActivityStore {
                 callbackAt,
                 "pending",
                 null,
+                rawCandidate,
+                rawPossibility,
                 callbackReceived,
                 intentHasExtras,
                 responsePresent,
@@ -247,6 +259,8 @@ public final class HmsActivityStore {
                 .putString(KEY_RAW_ACTIVITY, state.rawActivity)
                 .putInt(KEY_POSSIBILITY, state.possibility)
                 .putLong(KEY_SAMPLED_AT, state.sampledAt)
+                .putInt(KEY_RAW_CANDIDATE, state.rawCandidate)
+                .putInt(KEY_RAW_POSSIBILITY, state.rawPossibility)
                 .putBoolean(KEY_CALLBACK_RECEIVED, state.callbackReceived)
                 .putBoolean(KEY_INTENT_HAS_EXTRAS, state.intentHasExtras)
                 .putBoolean(KEY_RESPONSE_PRESENT, state.responsePresent)
@@ -269,6 +283,8 @@ public final class HmsActivityStore {
                 prefs.getLong(KEY_SAMPLED_AT, 0L),
                 "pending",
                 null,
+                prefs.getInt(KEY_RAW_CANDIDATE, -1),
+                prefs.getInt(KEY_RAW_POSSIBILITY, -1),
                 prefs.getBoolean(KEY_CALLBACK_RECEIVED, false),
                 prefs.getBoolean(KEY_INTENT_HAS_EXTRAS, false),
                 prefs.getBoolean(KEY_RESPONSE_PRESENT, false),
@@ -283,6 +299,8 @@ public final class HmsActivityStore {
         final long sampledAt;
         final String registrationState;
         final String lastErrorCode;
+        final int rawCandidate;
+        final int rawPossibility;
         final boolean callbackReceived;
         final boolean intentHasExtras;
         final boolean responsePresent;
@@ -295,6 +313,8 @@ public final class HmsActivityStore {
                 long sampledAt,
                 String registrationState,
                 String lastErrorCode,
+                int rawCandidate,
+                int rawPossibility,
                 boolean callbackReceived,
                 boolean intentHasExtras,
                 boolean responsePresent,
@@ -306,6 +326,8 @@ public final class HmsActivityStore {
             this.sampledAt = sampledAt;
             this.registrationState = registrationState;
             this.lastErrorCode = lastErrorCode;
+            this.rawCandidate = rawCandidate;
+            this.rawPossibility = rawPossibility;
             this.callbackReceived = callbackReceived;
             this.intentHasExtras = intentHasExtras;
             this.responsePresent = responsePresent;
