@@ -8,6 +8,7 @@ NATIVE="$ROOT/native/NativeBridge.java"
 for required in \
   "$ROOT/native/HealthBridge.java" \
   "$ROOT/native/HealthStateStore.java" \
+  "$ROOT/native/HealthCredentialStore.java" \
   "$ROOT/native/HealthConnectReader.kt" \
   "$ROOT/native/HealthSupport.java" \
   "$ROOT/native/HealthSyncWorker.java" \
@@ -28,6 +29,16 @@ grep -Fq 'getHealthState' "$ROOT/native/HealthBridge.java"
 grep -Fq 'getHealthStatus' "$ROOT/native/HealthBridge.java"
 grep -Fq 'syncNow' "$ROOT/native/HealthBridge.java"
 grep -Fq 'enqueueNow' "$ROOT/native/HealthBridge.java"
+grep -Fq 'getInstallId' "$ROOT/native/HealthBridge.java"
+grep -Fq 'provisionDeviceCredential' "$ROOT/native/HealthBridge.java"
+grep -Fq 'AndroidKeyStore' "$ROOT/native/HealthCredentialStore.java"
+grep -Fq 'AES/GCM/NoPadding' "$ROOT/native/HealthCredentialStore.java"
+! grep -Fq 'EncryptedSharedPreferences' "$ROOT/native/HealthCredentialStore.java"
+grep -Fq 'X-Health-Device-ID' "$ROOT/native/HealthSyncWorker.java"
+grep -Fq 'auth_invalid' "$ROOT/native/HealthSyncWorker.java"
+! grep -Fq 'INGEST_TOKEN' "$ROOT/native/HealthConfig.java"
+! grep -Fq 'INGEST_TOKEN' "$ROOT/native/HealthSyncWorker.java"
+! grep -Fq 'HEALTH_INGEST_TOKEN' "$ROOT/scripts/apply-health-r1.sh"
 grep -Fq 'HealthConnectClient' "$ROOT/native/HealthConnectReader.kt"
 grep -Fq 'getReadPermission(HeartRateRecord::class)' "$ROOT/native/HealthConnectReader.kt"
 grep -Fq 'getReadPermission(StepsRecord::class)' "$ROOT/native/HealthConnectReader.kt"
