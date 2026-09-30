@@ -17,6 +17,7 @@ for required in \
   "$ROOT/native/HealthSyncWorker.java" \
   "$ROOT/native/HealthConfig.java" \
   "$ROOT/native/BuildInfo.java" \
+  "$ROOT/native/HealthPermissionsRationaleActivity.java" \
   "$ROOT/scripts/apply-health-r1.sh"; do
   test -f "$required"
 done
@@ -85,6 +86,23 @@ grep -Fq 'healthPermissionLauncher.launch' "$ROOT/native/MainActivity.java"
 grep -Fq 'PermissionController.createRequestPermissionResultContract()' "$ROOT/native/MainActivity.java"
 grep -Fq 'new HealthBridge(this, healthStateStore)' "$ROOT/native/MainActivity.java"
 grep -Fq '"ElpisHealth"' "$ROOT/native/MainActivity.java"
+grep -Fq 'HealthPermissionsRationaleActivity.java' "$ROOT/scripts/apply-health-r1.sh"
+grep -Fq 'HealthPermissionsRationaleActivity' "$ROOT/native/HealthPermissionsRationaleActivity.java"
+grep -Fq 'requests READ access only' "$ROOT/native/HealthPermissionsRationaleActivity.java"
+grep -Fq "owner's personal Elpis health context" "$ROOT/native/HealthPermissionsRationaleActivity.java"
+grep -Fq "owner's own HayaGarden server" "$ROOT/native/HealthPermissionsRationaleActivity.java"
+grep -Fq 'does not request Health Connect WRITE permissions' "$ROOT/native/HealthPermissionsRationaleActivity.java"
+grep -Fq 'revoke Health Connect access' "$ROOT/native/HealthPermissionsRationaleActivity.java"
+grep -Fq 'HealthPermissionsRationaleActivity' "$MANIFEST"
+grep -Fq 'androidx.health.ACTION_SHOW_PERMISSIONS_RATIONALE' "$MANIFEST"
+grep -Fq 'android.intent.action.VIEW_PERMISSION_USAGE' "$MANIFEST"
+grep -Fq 'android.intent.category.HEALTH_PERMISSIONS' "$MANIFEST"
+grep -Fq 'android.permission.START_VIEW_PERMISSION_USAGE' "$MANIFEST"
+grep -Fq 'android.permission.health.READ_HEART_RATE' "$MANIFEST"
+grep -Fq 'android.permission.health.READ_STEPS' "$MANIFEST"
+grep -Fq 'android.permission.health.READ_SLEEP' "$MANIFEST"
+grep -Fq 'android.permission.health.READ_HEALTH_DATA_IN_BACKGROUND' "$MANIFEST"
+! grep -Eq 'android\.permission\.health\.WRITE_|getWritePermission' "$MANIFEST" "$ROOT/native/HealthConnectReader.kt" "$ROOT/scripts/apply-health-r1.sh"
 python3 - "$ROOT/native/MainActivity.java" <<'PY'
 import sys
 from pathlib import Path

@@ -10,7 +10,7 @@ ROOT_GRADLE="$ROOT/android/build.gradle"
 VARIABLES_GRADLE="$ROOT/android/variables.gradle"
 SOURCE_DIR="$ROOT/native"
 
-for required in HealthBridge.java HealthConnectReader.kt HealthStateStore.java HealthCredentialStore.java HealthSupport.java HealthSyncWorker.java BuildInfo.java HealthConfig.java; do
+for required in HealthBridge.java HealthConnectReader.kt HealthStateStore.java HealthCredentialStore.java HealthSupport.java HealthSyncWorker.java BuildInfo.java HealthConfig.java HealthPermissionsRationaleActivity.java; do
   if [[ ! -f "$SOURCE_DIR/$required" ]]; then
     echo "missing $SOURCE_DIR/$required" >&2
     exit 1
@@ -41,7 +41,7 @@ if (( MIN_SDK_VALUE < 26 )); then
 fi
 
 mkdir -p "$DEST_DIR"
-for source in BuildInfo.java HealthConfig.java HealthBridge.java HealthStateStore.java HealthCredentialStore.java HealthSupport.java HealthSyncWorker.java HealthConnectReader.kt; do
+for source in BuildInfo.java HealthConfig.java HealthBridge.java HealthStateStore.java HealthCredentialStore.java HealthSupport.java HealthSyncWorker.java HealthConnectReader.kt HealthPermissionsRationaleActivity.java; do
   cp "$SOURCE_DIR/$source" "$DEST_DIR/$source"
 done
 
@@ -112,6 +112,61 @@ ensure_manifest_line "android.permission.health.READ_HEALTH_DATA_IN_BACKGROUND" 
 if ! grep -Fq 'com.google.android.apps.healthdata' "$MANIFEST"; then
   sed -i '/<application/i\    <queries><package android:name="com.google.android.apps.healthdata" /></queries>' "$MANIFEST"
 fi
+
+
+ensure_manifest_application_block() {
+  local marker="$1"
+  local block="$2"
+  if grep -Fq "$marker" "$MANIFEST"; then
+    return
+  fi
+  local tmp
+  tmp="$(mktemp)"
+  if ! awk -v block="$block" '
+    !inserted && /<application/ {
+      print
+      print block
+      inserted = 1
+      next
+    }
+    { print }
+    END {
+      if (!inserted) exit 1
+    }
+  ' "$MANIFEST" > "$tmp"; then
+    rm -f "$tmp"
+    echo "missing application block in $MANIFEST" >&2
+    exit 1
+  fi
+  mv "$tmp" "$MANIFEST"
+}
+
+rationale_activity_block="$(cat <<'EOF'
+    <activity
+        android:name=".HealthPermissionsRationaleActivity"
+        android:exported="true">
+        <intent-filter>
+            <action android:name="androidx.health.ACTION_SHOW_PERMISSIONS_RATIONALE" />
+        </intent-filter>
+    </activity>
+EOF
+)"
+ensure_manifest_application_block   'androidx.health.ACTION_SHOW_PERMISSIONS_RATIONALE'   "$rationale_activity_block"
+
+usage_activity_alias_block="$(cat <<'EOF'
+    <activity-alias
+        android:name=".ViewPermissionUsageActivity"
+        android:exported="true"
+        android:targetActivity=".HealthPermissionsRationaleActivity"
+        android:permission="android.permission.START_VIEW_PERMISSION_USAGE">
+        <intent-filter>
+            <action android:name="android.intent.action.VIEW_PERMISSION_USAGE" />
+            <category android:name="android.intent.category.HEALTH_PERMISSIONS" />
+        </intent-filter>
+    </activity-alias>
+EOF
+)"
+ensure_manifest_application_block   'android.intent.action.VIEW_PERMISSION_USAGE'   "$usage_activity_alias_block"
 
 SOURCE_SHA="${GITHUB_SHA:-unknown}"
 BRANCH="${GITHUB_HEAD_REF:-${GITHUB_REF_NAME:-unknown}}"
