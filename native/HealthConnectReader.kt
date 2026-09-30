@@ -37,12 +37,12 @@ object HealthConnectReader {
         HEART_RATE_LIMIT + STEPS_LIMIT + SLEEP_LIMIT
 
     private val baseReadPermissions = setOf(
-        HealthPermission.PERMISSION_READ_HEART_RATE,
-        HealthPermission.PERMISSION_READ_STEPS,
-        HealthPermission.PERMISSION_READ_SLEEP
+        HealthPermission.getReadPermission(HeartRateRecord::class),
+        HealthPermission.getReadPermission(StepsRecord::class),
+        HealthPermission.getReadPermission(SleepSessionRecord::class)
     )
-    private const val backgroundReadPermission =
-        "android.permission.health.READ_HEALTH_DATA_IN_BACKGROUND"
+    private val backgroundReadPermission =
+        HealthPermission.PERMISSION_READ_HEALTH_DATA_IN_BACKGROUND
 
     @JvmStatic
     fun requiredPermissions(): Set<String> = baseReadPermissions
