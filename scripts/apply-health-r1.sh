@@ -123,7 +123,7 @@ ensure_manifest_application_block() {
   local tmp
   tmp="$(mktemp)"
   if ! awk -v block="$block" '
-    !inserted && /<\\/application>/ {
+    !inserted && /<\/application>/ {
       print block
       inserted = 1
     }
