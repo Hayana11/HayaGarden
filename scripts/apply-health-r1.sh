@@ -17,9 +17,11 @@ for required in HealthBridge.java HealthConnectReader.kt HealthStateStore.java H
   fi
 done
 
-# Health Connect SDK 1.1.0 declares minSdk 26. API 24-25 are unsupported
-# for this Health R1 build; keep the generated root ext value as the sole
-# minSdk authority and do not bypass manifest merger validation.
+# Health Connect SDK 1.1.0 declares minSdk 26. API 24-25 cannot install
+# this Health R1 APK; API 26-27 may install but Health Connect can be
+# unavailable and must surface UNAVAILABLE; API 28+ is eligible where supported.
+# Keep the generated root ext value as the sole minSdk authority and do not
+# bypass manifest merger validation.
 if [[ ! -f "$VARIABLES_GRADLE" ]]; then
   echo "missing generated minSdk authority: $VARIABLES_GRADLE" >&2
   exit 1
