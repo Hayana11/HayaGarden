@@ -80,6 +80,24 @@ grep -Fq 'cipher.init(Cipher.ENCRYPT_MODE, key)' "$ROOT/native/HealthCredentialS
 grep -Fq 'cipher.getIV()' "$ROOT/native/HealthCredentialStore.java"
 ! grep -Fq 'cipher.init(Cipher.ENCRYPT_MODE, key, new GCMParameterSpec' "$ROOT/native/HealthCredentialStore.java"
 grep -Fq 'setRandomizedEncryptionRequired(true)' "$ROOT/native/HealthCredentialStore.java"
+grep -Fq 'public void requestHealthConnectPermissions()' "$ROOT/native/MainActivity.java"
+grep -Fq 'healthPermissionLauncher.launch' "$ROOT/native/MainActivity.java"
+grep -Fq 'PermissionController.createRequestPermissionResultContract()' "$ROOT/native/MainActivity.java"
+grep -Fq 'new HealthBridge(this, healthStateStore)' "$ROOT/native/MainActivity.java"
+grep -Fq '"ElpisHealth"' "$ROOT/native/MainActivity.java"
+python3 - "$ROOT/native/MainActivity.java" <<'PY'
+import sys
+from pathlib import Path
+
+source = Path(sys.argv[1]).read_text()
+start = source.index("public void requestHealthConnectPermissions()")
+end = source.index("\n    private void requestHmsActivityPermissionIfNeeded()", start)
+method = source[start:end]
+assert "HealthConnectReader.permissionsForRequest" in method
+assert "runOnUiThread" in method
+assert "healthPermissionLauncher.launch" in method
+assert method.index("runOnUiThread") < method.index("healthPermissionLauncher.launch")
+PY
 ! grep -Fq 'EncryptedSharedPreferences' "$ROOT/native/HealthCredentialStore.java"
 grep -Fq 'X-Health-Device-ID' "$ROOT/native/HealthSyncWorker.java"
 grep -Fq 'auth_invalid' "$ROOT/native/HealthSyncWorker.java"

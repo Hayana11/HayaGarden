@@ -140,10 +140,17 @@ public class MainActivity extends BridgeActivity {
     }
 
     public void requestHealthConnectPermissions() {
-        if (healthPermissionLauncher != null) {
-            healthPermissionLauncher.launch(
-                    HealthConnectReader.permissionsForRequest(getApplicationContext()));
-        }
+        ActivityResultLauncher<Set<String>> launcher = healthPermissionLauncher;
+        if (launcher == null) return;
+
+        Set<String> permissions =
+                HealthConnectReader.permissionsForRequest(getApplicationContext());
+        runOnUiThread(() -> {
+            try {
+                launcher.launch(permissions);
+            } catch (Exception ignored) {
+            }
+        });
     }
 
     private void requestHmsActivityPermissionIfNeeded() {
