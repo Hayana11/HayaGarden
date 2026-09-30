@@ -20,10 +20,12 @@ public final class HealthStateStore {
     private static final int STEPS_LIMIT = 100;
     private static final int SLEEP_LIMIT = 100;
     private final SharedPreferences prefs;
+    private final HealthCredentialStore credentialStore;
 
     public HealthStateStore(Context context) {
-        prefs = context.getApplicationContext()
-                .getSharedPreferences(PREFS, Context.MODE_PRIVATE);
+        Context applicationContext = context.getApplicationContext();
+        prefs = applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
+        credentialStore = new HealthCredentialStore(applicationContext);
     }
 
     public synchronized String getHealthState() {
@@ -38,6 +40,7 @@ public final class HealthStateStore {
             result.put("available", state.optBoolean("available", false));
             result.put("permission", state.optString("permission", "unknown"));
             result.put("permissionState", state.optJSONObject("permissionState"));
+            result.put("enrollment", credentialStore.getEnrollmentState());
             result.put("providerStatus", state.optString("providerStatus", "UNAVAILABLE"));
             result.put("lastCollectedAt", nullable(state, "lastCollectedAt"));
             result.put("lastUploadAt", nullable(state, "lastUploadAt"));
