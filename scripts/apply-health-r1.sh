@@ -7,6 +7,7 @@ DEST_DIR="$ROOT/android/app/src/main/java/xyz/lovestyle/home/canary"
 MANIFEST="$ROOT/android/app/src/main/AndroidManifest.xml"
 GRADLE="$ROOT/android/app/build.gradle"
 ROOT_GRADLE="$ROOT/android/build.gradle"
+VARIABLES_GRADLE="$ROOT/android/variables.gradle"
 SOURCE_DIR="$ROOT/native"
 
 for required in HealthBridge.java HealthConnectReader.kt HealthStateStore.java HealthCredentialStore.java HealthSupport.java HealthSyncWorker.java BuildInfo.java HealthConfig.java; do
@@ -15,6 +16,27 @@ for required in HealthBridge.java HealthConnectReader.kt HealthStateStore.java H
     exit 1
   fi
 done
+
+# Health Connect SDK 1.1.0 declares minSdk 26. API 24-25 are unsupported
+# for this Health R1 build; keep the generated root ext value as the sole
+# minSdk authority and do not bypass manifest merger validation.
+if [[ ! -f "$VARIABLES_GRADLE" ]]; then
+  echo "missing generated minSdk authority: $VARIABLES_GRADLE" >&2
+  exit 1
+fi
+MIN_SDK_ASSIGNMENTS="$(grep -Ec '^[[:space:]]*minSdkVersion[[:space:]]*=' "$VARIABLES_GRADLE" || true)"
+if [[ "$MIN_SDK_ASSIGNMENTS" != "1" ]]; then
+  echo "expected exactly one minSdkVersion assignment in $VARIABLES_GRADLE; found $MIN_SDK_ASSIGNMENTS" >&2
+  exit 1
+fi
+MIN_SDK_VALUE="$(sed -n -E 's/^[[:space:]]*minSdkVersion[[:space:]]*=[[:space:]]*([0-9]+).*$/\1/p' "$VARIABLES_GRADLE" | head -n 1)"
+if [[ ! "$MIN_SDK_VALUE" =~ ^[0-9]+$ ]]; then
+  echo "could not read minSdkVersion from $VARIABLES_GRADLE" >&2
+  exit 1
+fi
+if (( MIN_SDK_VALUE < 26 )); then
+  sed -i -E 's/^[[:space:]]*minSdkVersion[[:space:]]*=.*$/    minSdkVersion = 26/' "$VARIABLES_GRADLE"
+fi
 
 mkdir -p "$DEST_DIR"
 for source in BuildInfo.java HealthConfig.java HealthBridge.java HealthStateStore.java HealthCredentialStore.java HealthSupport.java HealthSyncWorker.java HealthConnectReader.kt; do
