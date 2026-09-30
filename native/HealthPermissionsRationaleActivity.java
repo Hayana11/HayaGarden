@@ -37,11 +37,11 @@ public final class HealthPermissionsRationaleActivity extends Activity {
 
         TextView body = new TextView(this);
         body.setText(
-                "Health Connect permission rationale\\n\\n"
+                "Health Connect permission rationale\n\n"
                         + "Elpis Canary requests READ access only for heart rate, steps, and sleep. "
-                        + "It does not request Health Connect WRITE permissions.\\n\\n"
+                        + "It does not request Health Connect WRITE permissions.\n\n"
                         + "Health data is used for the owner's personal Elpis health context "
-                        + "and may sync to the owner's own HayaGarden server.\\n\\n"
+                        + "and may sync to the owner's own HayaGarden server.\n\n"
                         + "You can revoke Health Connect access at any time from Android Settings.");
         body.setTextColor(Color.rgb(48, 48, 48));
         body.setTextSize(16);
