@@ -10,7 +10,6 @@ import org.json.JSONObject;
 
 import java.nio.charset.StandardCharsets;
 import java.security.KeyStore;
-import java.security.SecureRandom;
 import java.util.UUID;
 
 import javax.crypto.Cipher;
@@ -37,7 +36,6 @@ public final class HealthCredentialStore {
     private static final int MAX_CREDENTIAL_LENGTH = 512;
 
     private final SharedPreferences preferences;
-    private final SecureRandom random = new SecureRandom();
 
     public HealthCredentialStore(Context context) {
         preferences = context.getApplicationContext().getSharedPreferences(PREFS, Context.MODE_PRIVATE);
@@ -55,11 +53,13 @@ public final class HealthCredentialStore {
         if (!validDeviceId(deviceId) || !validCredential(credential)) return false;
         try {
             SecretKey key = getOrCreateKey();
-            byte[] iv = new byte[12];
-            random.nextBytes(iv);
             Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
-            cipher.init(Cipher.ENCRYPT_MODE, key, new GCMParameterSpec(GCM_TAG_BITS, iv));
+            cipher.init(Cipher.ENCRYPT_MODE, key);
             byte[] ciphertext = cipher.doFinal(credential.getBytes(StandardCharsets.UTF_8));
+            byte[] iv = cipher.getIV();
+            if (iv == null || iv.length == 0) {
+                throw new IllegalStateException("Keystore did not provide a GCM IV");
+            }
             preferences.edit()
                     .putString(DEVICE_ID, deviceId.trim())
                     .putString(CIPHERTEXT, Base64.encodeToString(ciphertext, Base64.NO_WRAP))
