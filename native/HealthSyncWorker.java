@@ -25,6 +25,11 @@ public final class HealthSyncWorker extends Worker {
     @NonNull
     @Override
     public Result doWork() {
+        boolean manual = getInputData().getBoolean("manual", false);
+        if (!manual && !HealthConnectReader.canReadInBackground(getApplicationContext())) {
+            return Result.success();
+        }
+
         final String payload;
         try {
             payload = HealthConnectReader.collectBlocking(getApplicationContext());
@@ -56,11 +61,16 @@ public final class HealthSyncWorker extends Worker {
             int code = connection.getResponseCode();
             if (code >= 200 && code < 300) {
                 store.markUpload(Instant.now().toString(), true, "");
-            } else {
-                store.markUpload(Instant.now().toString(), false, "http_" + code);
+                return Result.success();
             }
+            store.markUpload(Instant.now().toString(), false, "http_" + code);
+            if (code == 408 || code == 429 || code >= 500) {
+                return Result.retry();
+            }
+            return Result.success();
         } catch (Exception ignored) {
             store.markUpload(Instant.now().toString(), false, "network_error");
+            return Result.retry();
         } finally {
             if (connection != null) {
                 try {
@@ -75,6 +85,5 @@ public final class HealthSyncWorker extends Worker {
                 connection.disconnect();
             }
         }
-        return Result.success();
     }
 }

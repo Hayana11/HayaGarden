@@ -63,7 +63,6 @@ fi
 
 SOURCE_SHA="${GITHUB_SHA:-unknown}"
 BRANCH="${GITHUB_HEAD_REF:-${GITHUB_REF_NAME:-unknown}}"
-TOKEN="${HEALTH_INGEST_TOKEN:-}"
 printf '%s\n' \
   'package xyz.lovestyle.home.canary;' \
   '' \
@@ -78,9 +77,9 @@ printf '%s\n' \
   '' \
   '/** Generated only in the CI build workspace. */' \
   'public final class HealthConfig {' \
-  "    public static final String INGEST_TOKEN = \"$TOKEN\";" \
+  '    public static final String INGEST_TOKEN = "";' \
   '    public static final String INGEST_URL = "https://love-style.xyz/api/health/mobile/ingest";' \
   '    private HealthConfig() {}' \
   '}' > "$DEST_DIR/HealthConfig.java"
 
-echo "Health Bridge R1 injected (token configured: $([[ -n "$TOKEN" ]] && echo yes || echo no))"
+echo "Health Bridge R1 injected (device credential provisioning not configured)"

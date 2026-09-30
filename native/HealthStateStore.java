@@ -15,6 +15,10 @@ public final class HealthStateStore {
     private static final String PREFS = "elpis_health_bridge";
     private static final String KEY_STATE = "state";
     private static final int SCHEMA_VERSION = 1;
+    private static final int MAX_RECORDS = 500;
+    private static final int HEART_RATE_LIMIT = 300;
+    private static final int STEPS_LIMIT = 100;
+    private static final int SLEEP_LIMIT = 100;
     private final SharedPreferences prefs;
 
     public HealthStateStore(Context context) {
@@ -33,6 +37,7 @@ public final class HealthStateStore {
             result.put("schemaVersion", SCHEMA_VERSION);
             result.put("available", state.optBoolean("available", false));
             result.put("permission", state.optString("permission", "unknown"));
+            result.put("permissionState", state.optJSONObject("permissionState"));
             result.put("providerStatus", state.optString("providerStatus", "UNAVAILABLE"));
             result.put("lastCollectedAt", nullable(state, "lastCollectedAt"));
             result.put("lastUploadAt", nullable(state, "lastUploadAt"));
@@ -68,7 +73,12 @@ public final class HealthStateStore {
             if (incoming.optInt("schemaVersion", -1) != SCHEMA_VERSION) return false;
             JSONArray records = incoming.optJSONArray("records");
             JSONObject statuses = incoming.optJSONObject("metricStatuses");
-            if (records == null || statuses == null || records.length() > 500) return false;
+            if (records == null || statuses == null || records.length() > MAX_RECORDS) return false;
+            if (count(records, "heart_rate") > HEART_RATE_LIMIT
+                    || count(records, "steps") > STEPS_LIMIT
+                    || count(records, "sleep") > SLEEP_LIMIT) {
+                return false;
+            }
 
             JSONObject state = readState();
             state.put("schemaVersion", SCHEMA_VERSION);
@@ -77,6 +87,8 @@ public final class HealthStateStore {
             state.put("providerStatus", incoming.optString("providerStatus", "UNAVAILABLE"));
             state.put("lastCollectedAt", incoming.optString("collectedAt", ""));
             state.put("backgroundSync", "scheduled");
+            JSONObject permissionState = incoming.optJSONObject("permissionState");
+            if (permissionState != null) state.put("permissionState", permissionState);
             state.put("metricStatuses", statuses);
             if (records.length() > 0 || !state.has("records")) state.put("records", records);
             prefs.edit().putString(KEY_STATE, state.toString()).apply();
@@ -120,6 +132,9 @@ public final class HealthStateStore {
             state.put("schemaVersion", SCHEMA_VERSION);
             state.put("available", false);
             state.put("permission", "unknown");
+            state.put("permissionState", new JSONObject()
+                    .put("metrics", "unknown")
+                    .put("backgroundRead", "unknown"));
             state.put("providerStatus", "UNAVAILABLE");
             state.put("backgroundSync", "scheduled");
             state.put("lastCollectedAt", JSONObject.NULL);
@@ -155,6 +170,15 @@ public final class HealthStateStore {
             }
         }
         return latest;
+    }
+
+    private static int count(JSONArray records, String metric) {
+        int count = 0;
+        for (int i = 0; i < records.length(); i++) {
+            JSONObject row = records.optJSONObject(i);
+            if (row != null && metric.equals(row.optString("metric"))) count++;
+        }
+        return count;
     }
 
     private static boolean isStale(String sampledAt) {

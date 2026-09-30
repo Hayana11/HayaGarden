@@ -66,8 +66,6 @@ jobs:
         run: bash scripts/apply-p2c1-physical.sh
 
       - name: Apply Health Bridge R1
-        env:
-          HEALTH_INGEST_TOKEN: ${{ secrets.HEALTH_INGEST_TOKEN }}
         run: bash scripts/apply-health-r1.sh
 
       - name: Health Bridge R1 contract test
