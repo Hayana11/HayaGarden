@@ -4,6 +4,9 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 MAIN="$ROOT/native/MainActivity.java"
 NATIVE="$ROOT/native/NativeBridge.java"
+VARIABLES_GRADLE="$ROOT/android/variables.gradle"
+APP_GRADLE="$ROOT/android/app/build.gradle"
+MANIFEST="$ROOT/android/app/src/main/AndroidManifest.xml"
 
 for required in \
   "$ROOT/native/HealthBridge.java" \
@@ -17,6 +20,27 @@ for required in \
   "$ROOT/scripts/apply-health-r1.sh"; do
   test -f "$required"
 done
+
+test -f "$VARIABLES_GRADLE"
+test -f "$APP_GRADLE"
+test -f "$MANIFEST"
+
+MIN_SDK_ASSIGNMENTS="$(grep -Ec '^[[:space:]]*minSdkVersion[[:space:]]*=' "$VARIABLES_GRADLE" || true)"
+if [[ "$MIN_SDK_ASSIGNMENTS" != "1" ]]; then
+  echo "expected exactly one minSdkVersion authority; found $MIN_SDK_ASSIGNMENTS" >&2
+  exit 1
+fi
+MIN_SDK_VALUE="$(sed -n -E 's/^[[:space:]]*minSdkVersion[[:space:]]*=[[:space:]]*([0-9]+).*$/\1/p' "$VARIABLES_GRADLE" | head -n 1)"
+if [[ ! "$MIN_SDK_VALUE" =~ ^[0-9]+$ ]] || (( MIN_SDK_VALUE < 26 )); then
+  echo "Health Connect requires minSdkVersion >= 26; found $MIN_SDK_VALUE" >&2
+  exit 1
+fi
+if grep -Eq '^[[:space:]]*minSdkVersion[[:space:]]*=[[:space:]]*[0-9]+' "$APP_GRADLE"; then
+  echo "app/build.gradle must not declare a second numeric minSdkVersion authority" >&2
+  exit 1
+fi
+grep -Eq '^[[:space:]]*minSdkVersion[[:space:]]+rootProject\.ext\.minSdkVersion' "$APP_GRADLE"
+! grep -Eq 'tools:overrideLibrary[^>]*androidx\.health\.connect\.client|androidx\.health\.connect\.client[^>]*tools:overrideLibrary' "$MANIFEST"
 
 grep -Fq '"ElpisNative"' "$MAIN"
 grep -Fq '"ElpisNotifications"' "$MAIN"
@@ -64,4 +88,4 @@ if grep -Fq 'new HealthBridge(physicalStateStore' "$MAIN"; then
   echo "health bridge must remain independent from physical bridge" >&2
   exit 1
 fi
-echo "Health Bridge R1.1 contract PASS"
+echo "Health Bridge R1.1 contract PASS (minSdkVersion=$MIN_SDK_VALUE)"
