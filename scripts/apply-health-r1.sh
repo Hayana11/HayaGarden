@@ -39,7 +39,11 @@ if grep -Fq "plugins {" "$GRADLE"; then
     sed -i '/^plugins[[:space:]]*{/a\    id "org.jetbrains.kotlin.android"' "$GRADLE"
   fi
 elif ! grep -Fq "kotlin-android" "$GRADLE"; then
-  sed -i "/com.android.application/a apply plugin: 'kotlin-android'" "$GRADLE"
+  if grep -Fq "plugins {" "$ROOT_GRADLE"; then
+    sed -i "/com.android.application/a apply plugin: 'org.jetbrains.kotlin.android'" "$GRADLE"
+  else
+    sed -i "/com.android.application/a apply plugin: 'kotlin-android'" "$GRADLE"
+  fi
 fi
 
 ensure_manifest_line() {
