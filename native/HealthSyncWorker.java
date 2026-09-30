@@ -38,8 +38,11 @@ public final class HealthSyncWorker extends Worker {
         }
         if (!store.saveCollection(payload)) return Result.success();
 
-        String token = HealthConfig.INGEST_TOKEN;
-        if (token == null || token.isEmpty()) {
+        HealthCredentialStore credentialStore =
+                new HealthCredentialStore(getApplicationContext());
+        String deviceId = credentialStore.getDeviceId();
+        String credential = credentialStore.getCredential();
+        if (deviceId.isEmpty() || credential == null || credential.isEmpty()) {
             store.markUpload(Instant.now().toString(), false, "auth_not_configured");
             return Result.success();
         }
@@ -52,7 +55,8 @@ public final class HealthSyncWorker extends Worker {
             connection.setReadTimeout(8000);
             connection.setDoOutput(true);
             connection.setRequestProperty("Content-Type", "application/json");
-            connection.setRequestProperty("Authorization", "Bearer " + token);
+            connection.setRequestProperty("Authorization", "Bearer " + credential);
+            connection.setRequestProperty("X-Health-Device-ID", deviceId);
             byte[] body = payload.getBytes(StandardCharsets.UTF_8);
             connection.setFixedLengthStreamingMode(body.length);
             try (OutputStream output = connection.getOutputStream()) {
@@ -63,7 +67,8 @@ public final class HealthSyncWorker extends Worker {
                 store.markUpload(Instant.now().toString(), true, "");
                 return Result.success();
             }
-            store.markUpload(Instant.now().toString(), false, "http_" + code);
+            String error = (code == 401 || code == 403) ? "auth_invalid" : "http_" + code;
+            store.markUpload(Instant.now().toString(), false, error);
             if (code == 408 || code == 429 || code >= 500) {
                 return Result.retry();
             }
