@@ -42,6 +42,24 @@ fi
 grep -Eq '^[[:space:]]*minSdkVersion[[:space:]]+rootProject\.ext\.minSdkVersion' "$APP_GRADLE"
 ! grep -Eq 'tools:overrideLibrary[^>]*androidx\.health\.connect\.client|androidx\.health\.connect\.client[^>]*tools:overrideLibrary' "$MANIFEST"
 
+count_dependency() {
+  grep -F -c "implementation \"$1\"" "$APP_GRADLE" || true
+}
+WORK_RUNTIME_COUNT="$(count_dependency 'androidx.work:work-runtime:2.9.0')"
+WORK_RUNTIME_KTX_COUNT="$(count_dependency 'androidx.work:work-runtime-ktx:2.9.0')"
+HEALTH_CONNECT_COUNT="$(count_dependency 'androidx.health.connect:connect-client:1.1.0')"
+GUAVA_COUNT="$(count_dependency 'com.google.guava:guava:31.1-android')"
+if [[ "$WORK_RUNTIME_COUNT" != "1" \
+   || "$WORK_RUNTIME_KTX_COUNT" != "1" \
+   || "$HEALTH_CONNECT_COUNT" != "1" \
+   || "$GUAVA_COUNT" != "1" ]]; then
+  echo "unexpected Health R1 dependency counts: work=$WORK_RUNTIME_COUNT workKtx=$WORK_RUNTIME_KTX_COUNT healthConnect=$HEALTH_CONNECT_COUNT guava=$GUAVA_COUNT" >&2
+  exit 1
+fi
+! grep -Fq 'com.google.guava:listenablefuture' "$APP_GRADLE"
+! grep -Fq 'resolutionStrategy.force' "$APP_GRADLE"
+! grep -Fq 'tools:overrideLibrary' "$MANIFEST"
+
 grep -Fq '"ElpisNative"' "$MAIN"
 grep -Fq '"ElpisNotifications"' "$MAIN"
 grep -Fq '"ElpisPhysical"' "$MAIN"
