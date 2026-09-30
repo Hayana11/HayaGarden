@@ -45,12 +45,40 @@ for source in BuildInfo.java HealthConfig.java HealthBridge.java HealthStateStor
   cp "$SOURCE_DIR/$source" "$DEST_DIR/$source"
 done
 
-if ! grep -Fq "androidx.health.connect:connect-client" "$GRADLE"; then
-  sed -i '/dependencies[[:space:]]*{/a\    implementation "androidx.health.connect:connect-client:1.1.0"' "$GRADLE"
-fi
-if ! grep -Fq "androidx.work:work-runtime-ktx" "$GRADLE"; then
-  sed -i '/dependencies[[:space:]]*{/a\    implementation "androidx.work:work-runtime-ktx:2.9.0"' "$GRADLE"
-fi
+ensure_app_dependency() {
+  local coordinate="$1"
+  local declaration="implementation \"$coordinate\""
+  if grep -Fq "$declaration" "$GRADLE"; then
+    return
+  fi
+  local tmp
+  tmp="$(mktemp)"
+  if ! awk -v declaration="$declaration" '
+    !inserted && $0 ~ /^[[:space:]]*dependencies[[:space:]]*\{/ {
+      print
+      print "    " declaration
+      inserted = 1
+      next
+    }
+    { print }
+    END {
+      if (!inserted) exit 1
+    }
+  ' "$GRADLE" > "$tmp"; then
+    rm -f "$tmp"
+    echo "missing canonical app dependencies block in $GRADLE" >&2
+    exit 1
+  fi
+  mv "$tmp" "$GRADLE"
+}
+
+# P2B owns work-runtime:2.9.0 in its appended block. Health R1 owns the
+# remaining compile-visible dependencies, inserted once into the first app
+# dependencies block so repeated runs do not fan out across blocks.
+ensure_app_dependency "androidx.health.connect:connect-client:1.1.0"
+ensure_app_dependency "androidx.work:work-runtime-ktx:2.9.0"
+ensure_app_dependency "com.google.guava:guava:31.1-android"
+
 if grep -Fq "plugins {" "$ROOT_GRADLE"; then
   if ! grep -Fq "org.jetbrains.kotlin.android" "$ROOT_GRADLE"; then
     sed -i '/^plugins[[:space:]]*{/a\    id "org.jetbrains.kotlin.android" version "2.2.20" apply false' "$ROOT_GRADLE"
