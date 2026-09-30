@@ -65,6 +65,14 @@ jobs:
       - name: Apply P2C.1 Physical + HMS Activity
         run: bash scripts/apply-p2c1-physical.sh
 
+      - name: Apply Health Bridge R1
+        env:
+          HEALTH_INGEST_TOKEN: ${{ secrets.HEALTH_INGEST_TOKEN }}
+        run: bash scripts/apply-health-r1.sh
+
+      - name: Health Bridge R1 contract test
+        run: bash scripts/test-health-r1.sh
+
       - name: P2B contract test
         run: bash scripts/test-p2b-native-notifications.sh
 
@@ -88,6 +96,6 @@ jobs:
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Elpis-Canary-p2c1-physical-${{ github.run_number }}
+          name: Elpis-Canary-health-r1-${{ github.run_number }}
           path: android/app/build/outputs/apk/debug/app-debug.apk
           retention-days: 30

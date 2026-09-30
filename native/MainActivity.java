@@ -7,6 +7,9 @@ import android.os.Build;
 import android.os.Bundle;
 import android.webkit.WebView;
 import androidx.activity.OnBackPressedCallback;
+import androidx.activity.result.ActivityResultLauncher;
+import androidx.health.connect.client.PermissionController;
+import java.util.Set;
 import com.getcapacitor.Bridge;
 import com.getcapacitor.BridgeActivity;
 
@@ -14,13 +17,25 @@ public class MainActivity extends BridgeActivity {
     private static final int REQUEST_HMS_ACTIVITY_PERMISSION = 19042;
     private PhysicalStateStore physicalStateStore;
     private HmsActivityStore hmsActivityStore;
+    private HealthStateStore healthStateStore;
+    private ActivityResultLauncher<Set<String>> healthPermissionLauncher;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
+        healthPermissionLauncher = registerForActivityResult(
+                PermissionController.createRequestPermissionResultContract(),
+                granted -> {
+                    if (healthStateStore != null) {
+                        healthStateStore.getHealthStatus();
+                    }
+                }
+        );
+
         physicalStateStore = new PhysicalStateStore(getApplicationContext());
         hmsActivityStore = new HmsActivityStore(getApplicationContext());
+        healthStateStore = new HealthStateStore(getApplicationContext());
 
         Bridge bridge = getBridge();
         WebView webView = bridge != null ? bridge.getWebView() : null;
@@ -41,8 +56,13 @@ public class MainActivity extends BridgeActivity {
                 new HmsActivityBridge(hmsActivityStore),
                 "ElpisActivity"
             );
+            webView.addJavascriptInterface(
+                new HealthBridge(this, healthStateStore),
+                "ElpisHealth"
+            );
         }
 
+        HealthSupport.ensureScheduled(this);
         NotificationSupport.createChannel(this);
         if (NotificationSupport.canPostNotifications(this)) {
             NotificationSupport.ensurePollingScheduled(this);
@@ -116,6 +136,12 @@ public class MainActivity extends BridgeActivity {
                 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)
                     == PackageManager.PERMISSION_GRANTED) {
             NotificationSupport.ensurePollingScheduled(this);
+        }
+    }
+
+    public void requestHealthConnectPermissions() {
+        if (healthPermissionLauncher != null) {
+            healthPermissionLauncher.launch(HealthConnectReader.requiredPermissions());
         }
     }
 
