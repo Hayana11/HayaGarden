@@ -31,6 +31,24 @@ public final class HealthBridge {
     }
 
     @JavascriptInterface
+    public String getBuildInfo() {
+        try {
+            JSONObject result = new JSONObject();
+            result.put("applicationId", activity.getPackageName());
+            android.content.pm.PackageInfo info = activity.getPackageManager()
+                    .getPackageInfo(activity.getPackageName(), 0);
+            result.put("versionName", info.versionName);
+            result.put("versionCode", android.os.Build.VERSION.SDK_INT >= 28
+                    ? info.getLongVersionCode() : info.versionCode);
+            result.put("sourceSha", BuildInfo.SOURCE_SHA);
+            result.put("branch", BuildInfo.BRANCH);
+            return result.toString();
+        } catch (Exception ignored) {
+            return "{\"error\":\"unavailable\"}";
+        }
+    }
+
+    @JavascriptInterface
     public String provisionDeviceCredential(String jsonString) {
         try {
             JSONObject request = new JSONObject(jsonString == null ? "" : jsonString);
