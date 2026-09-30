@@ -123,11 +123,9 @@ ensure_manifest_application_block() {
   local tmp
   tmp="$(mktemp)"
   if ! awk -v block="$block" '
-    !inserted && /<application/ {
-      print
+    !inserted && /<\\/application>/ {
       print block
       inserted = 1
-      next
     }
     { print }
     END {
@@ -135,7 +133,7 @@ ensure_manifest_application_block() {
     }
   ' "$MANIFEST" > "$tmp"; then
     rm -f "$tmp"
-    echo "missing application block in $MANIFEST" >&2
+    echo "missing closing application block in $MANIFEST" >&2
     exit 1
   fi
   mv "$tmp" "$MANIFEST"

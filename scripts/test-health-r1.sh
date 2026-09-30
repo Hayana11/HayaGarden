@@ -26,6 +26,54 @@ test -f "$VARIABLES_GRADLE"
 test -f "$APP_GRADLE"
 test -f "$MANIFEST"
 
+python3 - "$MANIFEST" <<'PY'
+import sys
+import xml.etree.ElementTree as ET
+
+ANDROID_NS = "http://schemas.android.com/apk/res/android"
+
+def local_name(tag):
+    return tag.rsplit("}", 1)[-1]
+
+root = ET.parse(sys.argv[1]).getroot()
+print("AndroidManifest.xml XML parse PASS")
+
+application = next(
+    (node for node in root if local_name(node.tag) == "application"),
+    None,
+)
+if application is None:
+    raise SystemExit("missing application element")
+
+def android_attr(node, name):
+    return node.attrib.get(f"{{{ANDROID_NS}}}{name}")
+
+children = list(application)
+rationale = next(
+    (
+        node for node in children
+        if local_name(node.tag) == "activity"
+        and android_attr(node, "name") == ".HealthPermissionsRationaleActivity"
+    ),
+    None,
+)
+usage_alias = next(
+    (
+        node for node in children
+        if local_name(node.tag) == "activity-alias"
+        and android_attr(node, "name") == ".ViewPermissionUsageActivity"
+    ),
+    None,
+)
+if rationale is None:
+    raise SystemExit("HealthPermissionsRationaleActivity is not under application")
+if usage_alias is None:
+    raise SystemExit("ViewPermissionUsageActivity is not under application")
+if android_attr(usage_alias, "targetActivity") != ".HealthPermissionsRationaleActivity":
+    raise SystemExit("ViewPermissionUsageActivity targetActivity mismatch")
+print("Health rationale manifest structure PASS")
+PY
+
 MIN_SDK_ASSIGNMENTS="$(grep -Ec '^[[:space:]]*minSdkVersion[[:space:]]*=' "$VARIABLES_GRADLE" || true)"
 if [[ "$MIN_SDK_ASSIGNMENTS" != "1" ]]; then
   echo "expected exactly one minSdkVersion authority; found $MIN_SDK_ASSIGNMENTS" >&2
