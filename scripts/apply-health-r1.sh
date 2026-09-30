@@ -9,7 +9,7 @@ GRADLE="$ROOT/android/app/build.gradle"
 ROOT_GRADLE="$ROOT/android/build.gradle"
 SOURCE_DIR="$ROOT/native"
 
-for required in HealthBridge.java HealthConnectReader.kt HealthStateStore.java HealthSupport.java HealthSyncWorker.java BuildInfo.java HealthConfig.java; do
+for required in HealthBridge.java HealthConnectReader.kt HealthStateStore.java HealthCredentialStore.java HealthSupport.java HealthSyncWorker.java BuildInfo.java HealthConfig.java; do
   if [[ ! -f "$SOURCE_DIR/$required" ]]; then
     echo "missing $SOURCE_DIR/$required" >&2
     exit 1
@@ -17,7 +17,7 @@ for required in HealthBridge.java HealthConnectReader.kt HealthStateStore.java H
 done
 
 mkdir -p "$DEST_DIR"
-for source in BuildInfo.java HealthConfig.java HealthBridge.java HealthStateStore.java HealthSupport.java HealthSyncWorker.java HealthConnectReader.kt; do
+for source in BuildInfo.java HealthConfig.java HealthBridge.java HealthStateStore.java HealthCredentialStore.java HealthSupport.java HealthSyncWorker.java HealthConnectReader.kt; do
   cp "$SOURCE_DIR/$source" "$DEST_DIR/$source"
 done
 
@@ -77,9 +77,8 @@ printf '%s\n' \
   '' \
   '/** Generated only in the CI build workspace. */' \
   'public final class HealthConfig {' \
-  '    public static final String INGEST_TOKEN = "";' \
   '    public static final String INGEST_URL = "https://love-style.xyz/api/health/mobile/ingest";' \
   '    private HealthConfig() {}' \
   '}' > "$DEST_DIR/HealthConfig.java"
 
-echo "Health Bridge R1 injected (device credential provisioning not configured)"
+echo "Health Bridge R1 injected (device-scoped credential provisioning required)"
