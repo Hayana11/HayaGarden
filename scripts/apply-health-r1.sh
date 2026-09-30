@@ -27,10 +27,18 @@ fi
 if ! grep -Fq "androidx.work:work-runtime-ktx" "$GRADLE"; then
   sed -i '/dependencies[[:space:]]*{/a\    implementation "androidx.work:work-runtime-ktx:2.9.0"' "$GRADLE"
 fi
-if ! grep -Fq "kotlin-gradle-plugin" "$ROOT_GRADLE"; then
+if grep -Fq "plugins {" "$ROOT_GRADLE"; then
+  if ! grep -Fq "org.jetbrains.kotlin.android" "$ROOT_GRADLE"; then
+    sed -i '/^plugins[[:space:]]*{/a\    id "org.jetbrains.kotlin.android" version "2.2.20" apply false' "$ROOT_GRADLE"
+  fi
+elif ! grep -Fq "kotlin-gradle-plugin" "$ROOT_GRADLE"; then
   sed -i '/dependencies[[:space:]]*{/a\        classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:2.2.20"' "$ROOT_GRADLE"
 fi
-if ! grep -Fq "kotlin-android" "$GRADLE"; then
+if grep -Fq "plugins {" "$GRADLE"; then
+  if ! grep -Fq "org.jetbrains.kotlin.android" "$GRADLE"; then
+    sed -i '/^plugins[[:space:]]*{/a\    id "org.jetbrains.kotlin.android"' "$GRADLE"
+  fi
+elif ! grep -Fq "kotlin-android" "$GRADLE"; then
   sed -i "/com.android.application/a apply plugin: 'kotlin-android'" "$GRADLE"
 fi
 
