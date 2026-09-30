@@ -7,10 +7,12 @@ import org.json.JSONObject;
 public final class HealthBridge {
     private final MainActivity activity;
     private final HealthStateStore store;
+    private final HealthCredentialStore credentialStore;
 
     public HealthBridge(MainActivity activity, HealthStateStore store) {
         this.activity = activity;
         this.store = store;
+        this.credentialStore = new HealthCredentialStore(activity.getApplicationContext());
     }
 
     @JavascriptInterface
@@ -21,6 +23,34 @@ public final class HealthBridge {
     @JavascriptInterface
     public String getHealthStatus() {
         return store.getHealthStatus();
+    }
+
+    @JavascriptInterface
+    public String getInstallId() {
+        return credentialStore.getInstallId();
+    }
+
+    @JavascriptInterface
+    public String provisionDeviceCredential(String jsonString) {
+        try {
+            JSONObject request = new JSONObject(jsonString == null ? "" : jsonString);
+            String deviceId = request.optString("deviceId", "");
+            String credential = request.optString("credential", "");
+            if (deviceId.length() > 80 || credential.length() > 512
+                    || deviceId.isEmpty() || credential.isEmpty()) {
+                return "{\"ok\":false,\"configured\":false}";
+            }
+            if (!credentialStore.provision(deviceId, credential)) {
+                return "{\"ok\":false,\"configured\":false}";
+            }
+            JSONObject result = new JSONObject();
+            result.put("ok", true);
+            result.put("deviceId", credentialStore.getDeviceId());
+            result.put("configured", true);
+            return result.toString();
+        } catch (Exception ignored) {
+            return "{\"ok\":false,\"configured\":false}";
+        }
     }
 
     @JavascriptInterface
