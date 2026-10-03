@@ -106,6 +106,7 @@ ensure_manifest_line() {
   fi
 }
 ensure_manifest_line "android.permission.health.READ_HEART_RATE" '<uses-permission android:name="android.permission.health.READ_HEART_RATE" />'
+ensure_manifest_line "android.permission.health.READ_RESTING_HEART_RATE" '<uses-permission android:name="android.permission.health.READ_RESTING_HEART_RATE" />'
 ensure_manifest_line "android.permission.health.READ_STEPS" '<uses-permission android:name="android.permission.health.READ_STEPS" />'
 ensure_manifest_line "android.permission.health.READ_SLEEP" '<uses-permission android:name="android.permission.health.READ_SLEEP" />'
 ensure_manifest_line "android.permission.health.READ_HEALTH_DATA_IN_BACKGROUND" '<uses-permission android:name="android.permission.health.READ_HEALTH_DATA_IN_BACKGROUND" />'

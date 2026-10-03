@@ -38,7 +38,7 @@ public final class HealthPermissionsRationaleActivity extends Activity {
         TextView body = new TextView(this);
         body.setText(
                 "Health Connect permission rationale\n\n"
-                        + "Elpis Canary requests READ access only for heart rate, steps, and sleep. "
+                        + "Elpis Canary requests READ access only for heart rate, resting heart rate, steps, and sleep. "
                         + "It does not request Health Connect WRITE permissions.\n\n"
                         + "Health data is used for the owner's personal Elpis health context "
                         + "and may sync to the owner's own HayaGarden server.\n\n"
