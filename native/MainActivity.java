@@ -69,6 +69,8 @@ public class MainActivity extends BridgeActivity {
             webView.addJavascriptInterface(
                 new HealthBridge(this, healthStateStore),
                 "ElpisHealth"
+            );
+            webView.addJavascriptInterface(
                 new InsetsBridge(getApplicationContext(), webView),
                 "ElpisInsets"
             );
