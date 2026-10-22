@@ -14,11 +14,13 @@ on:
       - claude/p2b1-notification-icon-polish
       - agent/p2c1-physical-reality-sensors
       - agent/elpis-canary-health-bridge-r1
+      - claude/focused-ramanujan-ua44pc
       - 'cursor/**'
   workflow_dispatch:
   pull_request:
     branches:
       - main
+      - claude/p2b1-notification-icon-polish
       - claude/app-shell-reset-p1-navigation
       - claude/app-shell-p2a-nativebridge-lite
 
@@ -73,6 +75,9 @@ jobs:
       - name: Health Bridge R1 contract test
         run: bash scripts/test-health-r1.sh
 
+      - name: IME edge-to-edge contract test
+        run: bash scripts/test-ime-edge-to-edge.sh android
+
       - name: P2B contract test
         run: bash scripts/test-p2b-native-notifications.sh
 
@@ -81,6 +86,9 @@ jobs:
 
       - name: HMS Activity R1 contract test
         run: bash scripts/test-hms-activity-r1.sh
+
+      - name: Top safe inset and edge-to-edge contract test
+        run: bash scripts/test-top-safe-inset-edge-to-edge.sh
 
       - name: Generate app icons
         run: |

@@ -11,6 +11,7 @@ MAIN="$ROOT/native/MainActivity.java"
 HMS_STORE="$ROOT/native/HmsActivityStore.java"
 HMS_RECEIVER="$ROOT/native/HmsActivityReceiver.java"
 HMS_BRIDGE="$ROOT/native/HmsActivityBridge.java"
+INSETS="$ROOT/native/InsetsBridge.java"
 DEST_DIR="$ROOT/android/app/src/main/java/xyz/lovestyle/home/canary"
 MANIFEST="$ROOT/android/app/src/main/AndroidManifest.xml"
 GRADLE="$ROOT/android/app/build.gradle"
@@ -18,7 +19,7 @@ ROOT_GRADLE="$ROOT/android/build.gradle"
 SETTINGS="$ROOT/android/settings.gradle"
 HMS_LOCATION_VERSION="6.4.0.300"
 
-for required in "$P2B" "$STORE" "$BRIDGE" "$MAIN" "$HMS_STORE" "$HMS_RECEIVER" "$HMS_BRIDGE"; do
+for required in "$P2B" "$STORE" "$BRIDGE" "$MAIN" "$HMS_STORE" "$HMS_RECEIVER" "$HMS_BRIDGE" "$INSETS"; do
   if [[ ! -f "$required" ]]; then
     echo "missing $required" >&2
     exit 1
@@ -34,6 +35,7 @@ cp "$MAIN" "$DEST_DIR/MainActivity.java"
 cp "$HMS_STORE" "$DEST_DIR/HmsActivityStore.java"
 cp "$HMS_RECEIVER" "$DEST_DIR/HmsActivityReceiver.java"
 cp "$HMS_BRIDGE" "$DEST_DIR/HmsActivityBridge.java"
+cp "$INSETS" "$DEST_DIR/InsetsBridge.java"
 
 if ! grep -Fq "com.huawei.hms:location:" "$GRADLE"; then
   sed -i "/dependencies[[:space:]]*{/a\    implementation \"com.huawei.hms:location:$HMS_LOCATION_VERSION\"" "$GRADLE"

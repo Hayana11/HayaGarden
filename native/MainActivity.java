@@ -1,11 +1,19 @@
 package xyz.lovestyle.home.canary;
 
 import android.Manifest;
+import android.graphics.Color;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.os.Build;
 import android.os.Bundle;
+import android.view.View;
+import android.view.ViewGroup;
+import android.view.Window;
+import android.view.WindowManager;
 import android.webkit.WebView;
+import androidx.core.graphics.Insets;
+import androidx.core.view.ViewCompat;
+import androidx.core.view.WindowInsetsCompat;
 import androidx.activity.OnBackPressedCallback;
 import androidx.activity.result.ActivityResultLauncher;
 import androidx.health.connect.client.PermissionController;
@@ -32,6 +40,7 @@ public class MainActivity extends BridgeActivity {
                     }
                 }
         );
+        configureTopStatusBar();
 
         physicalStateStore = new PhysicalStateStore(getApplicationContext());
         hmsActivityStore = new HmsActivityStore(getApplicationContext());
@@ -40,6 +49,7 @@ public class MainActivity extends BridgeActivity {
         Bridge bridge = getBridge();
         WebView webView = bridge != null ? bridge.getWebView() : null;
         if (webView != null) {
+            configureImeResize(webView);
             webView.addJavascriptInterface(
                 new NativeBridge(getApplicationContext()),
                 "ElpisNative"
@@ -59,6 +69,8 @@ public class MainActivity extends BridgeActivity {
             webView.addJavascriptInterface(
                 new HealthBridge(this, healthStateStore),
                 "ElpisHealth"
+                new InsetsBridge(getApplicationContext(), webView),
+                "ElpisInsets"
             );
         }
 
@@ -87,6 +99,52 @@ public class MainActivity extends BridgeActivity {
                 }
             }
         );
+    }
+
+    /**
+     * Shrink the native container that owns the WebView when the IME opens.
+     * This changes the WebView viewport so fixed-position frontend elements
+     * remain above the keyboard without a frontend keyboard-height workaround.
+     * Navigation-bar safe area remains owned by the WebView/frontend.
+     */
+    private void configureImeResize(WebView webView) {
+        final ViewGroup imeContainer = webView.getParent() instanceof ViewGroup
+                ? (ViewGroup) webView.getParent()
+                : webView;
+        final int baseBottomPadding = imeContainer.getPaddingBottom();
+
+        ViewCompat.setOnApplyWindowInsetsListener(imeContainer, (view, insets) -> {
+            Insets imeInsets = insets.getInsets(WindowInsetsCompat.Type.ime());
+            int imeBottom = insets.isVisible(WindowInsetsCompat.Type.ime())
+                    ? imeInsets.bottom
+                    : 0;
+            int targetBottomPadding = baseBottomPadding + imeBottom;
+
+            if (view.getPaddingBottom() != targetBottomPadding) {
+                view.setPadding(
+                        view.getPaddingLeft(),
+                        view.getPaddingTop(),
+                        view.getPaddingRight(),
+                        targetBottomPadding
+                );
+            }
+            return insets;
+        });
+        ViewCompat.requestApplyInsets(imeContainer);
+    }
+    private void configureTopStatusBar() {
+        Window window = getWindow();
+        window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
+        window.addFlags(WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS);
+        window.setStatusBarColor(Color.TRANSPARENT);
+
+        int flags = window.getDecorView().getSystemUiVisibility()
+                | View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+                | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            flags |= View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR;
+        }
+        window.getDecorView().setSystemUiVisibility(flags);
     }
 
     @Override
