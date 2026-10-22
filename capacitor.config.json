@@ -1,14 +1,9 @@
 {
-  "appId": "xyz.lovestyle.home",
-  "appName": "Elpis",
+  "appId": "xyz.lovestyle.home.canary",
+  "appName": "Elpis Canary",
   "webDir": "www",
   "server": {
     "url": "https://love-style.xyz",
     "cleartext": false
-  },
-  "android": {
-    "allowMixedContent": false,
-    "captureInput": true,
-    "webContentsDebuggingEnabled": true
   }
 }
