@@ -1,5 +1,11 @@
 # HayaGarden APK — 新窗口上手指南
 
+> **已退役，不要在这里开发。** `main` 分支是旧壳 `xyz.lovestyle.home`，已不再安装和维护。
+> 所有新功能一律做在 **Elpis Canary**（`xyz.lovestyle.home.canary`）上，目前在从
+> `cursor/health-heart-rate-model-view-r4-ddac` 开始的那串分支里（见那边的 `AGENTS.md`）。
+> 只有旧壳才有的功能（截屏 ScreenCapture、Pocket、AppTracker、旧推送）是已退役，不是待移植。
+> 等 Canary 功能齐了，旧壳会整个删除。
+
 ## 这是什么
 
 Capacitor 6 Android WebView 壳。APK 本身不含任何页面内容——打开就加载 `https://love-style.xyz`（生产站），所有 UI 变动直接改 VPS 的 Flask 服务即可，不需要重打 APK。
