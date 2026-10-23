@@ -28,6 +28,7 @@ public class MainActivity extends BridgeActivity {
     private HealthStateStore healthStateStore;
     private ActivityResultLauncher<Set<String>> healthPermissionLauncher;
     private SpeechBridge speechBridge;
+    private VoiceBridge voiceBridge;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -77,6 +78,8 @@ public class MainActivity extends BridgeActivity {
             );
             speechBridge = new SpeechBridge(this, webView);
             webView.addJavascriptInterface(speechBridge, "ElpisSpeech");
+            voiceBridge = new VoiceBridge(this, webView);
+            webView.addJavascriptInterface(voiceBridge, "ElpisVoice");
         }
 
         HealthSupport.ensureScheduled(this);
@@ -164,6 +167,9 @@ public class MainActivity extends BridgeActivity {
         if (speechBridge != null) {
             speechBridge.resumed();
         }
+        if (voiceBridge != null) {
+            voiceBridge.resumed();
+        }
     }
 
     @Override
@@ -174,12 +180,18 @@ public class MainActivity extends BridgeActivity {
         if (speechBridge != null) {
             speechBridge.release();
         }
+        if (voiceBridge != null) {
+            voiceBridge.release();
+        }
         // HMS updates intentionally remain registered while backgrounded.
         super.onPause();
     }
 
     @Override
     public void onDestroy() {
+        if (voiceBridge != null) {
+            voiceBridge.close();
+        }
         super.onDestroy();
     }
 
@@ -196,6 +208,9 @@ public class MainActivity extends BridgeActivity {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
         if (speechBridge != null) {
             speechBridge.onPermissionResult(requestCode, grantResults);
+        }
+        if (voiceBridge != null) {
+            voiceBridge.onPermissionResult(requestCode, grantResults);
         }
         if (requestCode == REQUEST_HMS_ACTIVITY_PERMISSION
                 && hmsActivityStore != null
