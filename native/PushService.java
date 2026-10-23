@@ -116,6 +116,9 @@ public class PushService extends Service {
         try {
             URL url = new URL(NotificationSupport.pollUrl(this, WAIT_S));
             connection = (HttpURLConnection) url.openConnection();
+            if (!NotificationSupport.authorize(getApplicationContext(), connection)) {
+                throw new IllegalStateException("device not enrolled");
+            }
             connection.setRequestMethod("GET");
             connection.setConnectTimeout(10000);
             connection.setReadTimeout((WAIT_S + 15) * 1000);

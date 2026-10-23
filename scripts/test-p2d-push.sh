@@ -39,6 +39,27 @@ grep -qF 'DeliveryLedger.deliver' "$SUPPORT" && grep -qF 'synchronized (LOCK)' "
 grep -qF '.commit()' "$SUPPORT" && ! grep -qF '.apply()' "$SUPPORT" \
   && pass "ledger writes are synchronous" || fail "ledger must persist with commit(), not apply()"
 
+for client in "$SERVICE" "$NATIVE/NotificationPollWorker.java"; do
+  grep -qF 'NotificationSupport.authorize(' "$client" \
+    && pass "$(basename "$client") authenticates with the Health Bridge device credential" \
+    || fail "$(basename "$client") must call NotificationSupport.authorize before polling"
+done
+grep -qF 'X-Health-Device-ID' "$SUPPORT" && grep -qF '"Bearer " + credential' "$SUPPORT" \
+  && grep -qF 'new HealthCredentialStore(' "$SUPPORT" \
+  && pass "push auth reuses HealthCredentialStore headers" || fail "push auth must reuse the Health Bridge credential headers"
+awk '/public static void ack\(/,/^    }$/' "$SUPPORT" | grep -qF 'authorize(ctx, connection)' \
+  && pass "ack is authenticated" || fail "ack must call authorize"
+if grep -E 'protocol=ack' "$SUPPORT" >/dev/null && ! grep -qE '"\?wait=|API \+ "\?' "$SERVICE" "$NATIVE/NotificationPollWorker.java"; then
+  pass "no legacy-protocol fallback in clients"
+else
+  fail "clients must not build a legacy (non-ack) poll URL"
+fi
+if grep -nE 'Log\.[a-z]+\(.*[Cc]redential|System\.out.*[Cc]redential' "$NATIVE"/*.java; then
+  fail "a credential reaches a log statement"
+else
+  pass "no credential in log statements"
+fi
+
 LEDGER_OUT="$(mktemp -d)"
 if javac -d "$LEDGER_OUT" "$NATIVE/DeliveryLedger.java" "$ROOT/scripts/jvm-tests/DeliveryLedgerTest.java" \
     && java -cp "$LEDGER_OUT" xyz.lovestyle.home.canary.DeliveryLedgerTest; then

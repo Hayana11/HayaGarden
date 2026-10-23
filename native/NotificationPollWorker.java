@@ -28,6 +28,10 @@ public class NotificationPollWorker extends Worker {
         try {
             URL url = new URL(NotificationSupport.pollUrl(getApplicationContext(), 0));
             connection = (HttpURLConnection) url.openConnection();
+            if (!NotificationSupport.authorize(getApplicationContext(), connection)) {
+                // Not enrolled as a Health Bridge device: the ack protocol cannot authenticate.
+                return Result.success();
+            }
             connection.setRequestMethod("GET");
             connection.setConnectTimeout(8000);
             connection.setReadTimeout(8000);

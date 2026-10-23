@@ -157,7 +157,7 @@ public final class NotificationSupport {
         }
         Delivery result = showOnce(ctx, id, payload.optString("title", ""), content);
         if (result != Delivery.NOT_SHOWN) {
-            ack(id);
+            ack(ctx, id);
         }
         return result;
     }
@@ -188,8 +188,25 @@ public final class NotificationSupport {
         }
     }
 
+    /**
+     * Health Bridge device credential on a push request (ack protocol is
+     * authenticated). Returns false when this device is not enrolled; callers
+     * then skip the request instead of falling back to the legacy protocol.
+     */
+    public static boolean authorize(Context ctx, HttpURLConnection connection) {
+        HealthCredentialStore store = new HealthCredentialStore(ctx.getApplicationContext());
+        String deviceId = store.getDeviceId();
+        String credential = store.getCredential();
+        if (deviceId == null || deviceId.isEmpty() || credential == null || credential.isEmpty()) {
+            return false;
+        }
+        connection.setRequestProperty("Authorization", "Bearer " + credential);
+        connection.setRequestProperty("X-Health-Device-ID", deviceId);
+        return true;
+    }
+
     /** Best effort and idempotent server-side; a lost ack is recovered by the since cursor. */
-    public static void ack(String id) {
+    public static void ack(Context ctx, String id) {
         HttpURLConnection connection = null;
         try {
             byte[] body = new JSONObject()
@@ -197,6 +214,9 @@ public final class NotificationSupport {
                     .toString()
                     .getBytes(StandardCharsets.UTF_8);
             connection = (HttpURLConnection) new URL(ACK_API).openConnection();
+            if (!authorize(ctx, connection)) {
+                return;
+            }
             connection.setRequestMethod("POST");
             connection.setRequestProperty("Content-Type", "application/json");
             connection.setConnectTimeout(8000);
