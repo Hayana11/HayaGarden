@@ -20,6 +20,8 @@ for source in VoiceBridge.java VoiceCapture.java SileroVad.java VoiceSegmenter.j
   [[ -f "$NATIVE/$source" ]] && pass "present native/$source" || fail "missing native/$source"
 done
 [[ -f "$MODEL" ]] && pass "present Silero model" || fail "missing Silero model"
+[[ -f "$ROOT/third_party/silero-vad/LICENSE" ]] && pass "Silero MIT license is vendored" || fail "Silero LICENSE missing"
+[[ -f "$ROOT/third_party/silero-vad/NOTICE.md" ]] && grep -qF "$EXPECTED_MODEL_SHA" "$ROOT/third_party/silero-vad/NOTICE.md"   && pass "Silero provenance notice includes model SHA256" || fail "Silero provenance notice missing"
 if [[ -f "$MODEL" ]]; then
   [[ "$(sha256sum "$MODEL" | awk '{print $1}')" == "$EXPECTED_MODEL_SHA" ]]     && pass "model SHA256 is fixed and verified" || fail "model SHA256 mismatch"
 fi
@@ -37,6 +39,7 @@ else
 fi
 
 if [[ -f "$MANIFEST" ]]; then
+  grep -Eq 'applicationId[[:space:]]+["'\'' ]xyz\.lovestyle\.home\.canary' "$GRADLE"     && pass "Canary package remains xyz.lovestyle.home.canary" || fail "Canary package changed"
   [[ "$(grep -Fc 'android.permission.RECORD_AUDIO"' "$MANIFEST")" -eq 1 ]]     && pass "RECORD_AUDIO declared once" || fail "RECORD_AUDIO declaration count is not one"
   [[ -f "$GEN_JAVA/VoiceBridge.java" && -f "$GEN_JAVA/VoiceCapture.java"       && -f "$GEN_JAVA/SileroVad.java" && -f "$GEN_JAVA/VoiceSegmenter.java"       && -f "$GEN_JAVA/WavEncoder.java" ]]     && pass "generated P2F Java sources exist" || fail "generated P2F Java source missing"
   [[ -f "$GEN_ASSETS/silero_vad.onnx" ]]     && pass "generated model asset exists" || fail "generated model asset missing"
