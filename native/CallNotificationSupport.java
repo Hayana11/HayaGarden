@@ -41,7 +41,7 @@ public final class CallNotificationSupport {
      * sent with. Independent of its message, which is handled as before even
      * when the call delta is stale.
      */
-    public static void handleDelta(Context ctx, JSONObject payload, CallState.Snapshot call) {
+    public static void handleDelta(Context ctx, JSONObject payload, CallState.Snapshot sentWith) {
         if (payload == null || !payload.has("call")) {
             return;
         }
@@ -58,7 +58,7 @@ public final class CallNotificationSupport {
                 title = given;
             }
         }
-        switch (CallState.apply(call, true, id)) {
+        switch (CallState.apply(sentWith, true, id)) {
             case SHOW:
                 show(ctx, title);
                 break;

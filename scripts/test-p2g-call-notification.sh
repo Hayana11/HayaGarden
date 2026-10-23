@@ -39,7 +39,7 @@ if grep -qF '"&known_call=" + known' "$CALL" && grep -qF 'call.known' "$CALL"; t
 else
   fail "known_call query must come from the CallState snapshot"
 fi
-grep -qF 'CallState.apply(call, true, id)' "$CALL" \
+grep -qF 'CallState.apply(sentWith, true, id)' "$CALL" \
   && pass "call delta is applied against the request's snapshot (revision fence)" \
   || fail "call delta must be applied through CallState.apply(snapshot, ...)"
 # Each poller snapshots before building the URL and hands that same snapshot to
