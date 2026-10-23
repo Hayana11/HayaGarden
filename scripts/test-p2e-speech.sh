@@ -20,6 +20,12 @@ grep -qF '"ElpisSpeech"' "$MAIN" && grep -qF 'new SpeechBridge(this, webView)' "
   && pass "MainActivity registers ElpisSpeech" || fail "MainActivity must register ElpisSpeech"
 grep -qF 'speechBridge.release()' "$MAIN" \
   && pass "microphone is released on pause" || fail "onPause must release the recognizer"
+ON_RESUME="$(sed -n '/public void onResume/,/public void onPause/p' "$MAIN")"
+printf '%s\n' "$ON_RESUME" | grep -qF 'speechBridge.resumed()' \
+  && pass "page hears when the app comes back" || fail "onResume must tell the page (speechBridge.resumed())"
+RELEASE="$(sed -n '/public void release()/,/^    }/p' "$BRIDGE")"
+printf '%s\n' "$RELEASE" | grep -qF 'emit("error", null, "paused")' \
+  && pass "pause reports the killed listen to the page" || fail "release() must emit error code paused"
 grep -qF 'speechBridge.onPermissionResult(' "$MAIN" \
   && pass "permission result reaches the bridge" || fail "onRequestPermissionsResult must forward to SpeechBridge"
 

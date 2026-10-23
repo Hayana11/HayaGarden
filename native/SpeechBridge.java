@@ -18,7 +18,7 @@ import org.json.JSONObject;
  *
  * JS: window.ElpisSpeech.{isAvailable, hasPermission, requestPermission, start(lang), stop, cancel}.
  * Results go back as window.__elpisSpeech(json) with type
- * ready | speech_start | partial | final | end | error | permission.
+ * ready | speech_start | partial | final | end | error | permission | resumed.
  *
  * One utterance per start(); the page restarts listening when it wants more.
  * Never forces on-device recognition (a phone with dictation disabled would
@@ -111,9 +111,22 @@ public class SpeechBridge {
         activity.runOnUiThread(this::destroyRecognizer);
     }
 
-    /** Called from MainActivity.onPause: never keep the microphone open in the background. */
+    /**
+     * Called from MainActivity.onPause: never keep the microphone open in the background.
+     * A live recognizer is reported as error "paused" so the page stops claiming to listen.
+     */
     public void release() {
-        activity.runOnUiThread(this::destroyRecognizer);
+        activity.runOnUiThread(() -> {
+            if (recognizer != null) {
+                destroyRecognizer();
+                emit("error", null, "paused");
+            }
+        });
+    }
+
+    /** Called from MainActivity.onResume: the page decides whether to listen again. */
+    public void resumed() {
+        emit("resumed", null, null);
     }
 
     private void destroyRecognizer() {

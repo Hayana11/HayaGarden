@@ -161,6 +161,9 @@ public class MainActivity extends BridgeActivity {
         if (hmsActivityStore != null) {
             hmsActivityStore.startIfPermitted();
         }
+        if (speechBridge != null) {
+            speechBridge.resumed();
+        }
     }
 
     @Override
