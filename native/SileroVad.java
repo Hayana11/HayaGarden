@@ -102,7 +102,7 @@ public final class SileroVad implements AutoCloseable {
         }
     }
 
-    private void validateModelContract() {
+    private void validateModelContract() throws OrtException {
         Map<String, NodeInfo> inputs = session.getInputInfo();
         Map<String, NodeInfo> outputs = session.getOutputInfo();
         requireRank(inputs, "input", 2);
@@ -128,7 +128,11 @@ public final class SileroVad implements AutoCloseable {
     public synchronized void close() {
         if (closed) return;
         closed = true;
-        session.close();
+        try {
+            session.close();
+        } catch (OrtException ignored) {
+            // A failed close cannot recover an already-finished capture.
+        }
         options.close();
     }
 }
