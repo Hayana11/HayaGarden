@@ -263,6 +263,7 @@ public class MainActivity extends BridgeActivity {
         if (intent != null && intent.getBooleanExtra(
                 CallNotificationSupport.EXTRA_OPEN_CALL, false)) {
             intent.removeExtra(CallNotificationSupport.EXTRA_OPEN_CALL);
+            CallNotificationSupport.stopRinging(this);
             Bridge callBridge = getBridge();
             WebView callView = callBridge != null ? callBridge.getWebView() : null;
             if (callView != null) {

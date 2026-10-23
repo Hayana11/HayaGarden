@@ -21,10 +21,14 @@ for f in "$CALL" "$STATE"; do
   [[ -f "$f" ]] && pass "present ${f#$ROOT/}" || fail "missing ${f#$ROOT/}"
 done
 
-for token in 'CHANNEL_ID = "fyodor_call_v1"' 'NotificationManager.IMPORTANCE_HIGH' \
+for token in 'CHANNEL_ID = "fyodor_call_v2"' 'NotificationManager.IMPORTANCE_HIGH' \
              'NotificationCompat.CATEGORY_CALL' '.setOngoing(true)' 'NOTIFICATION_ID = 0xCA11' \
              'CALL_URL = "https://love-style.xyz/dash/call"' '.cancel(NOTIFICATION_ID)' \
-             '.notify(NOTIFICATION_ID, builder.build())'; do
+             '.notify(NOTIFICATION_ID, notification)' \
+             'notification.flags |= Notification.FLAG_INSISTENT' \
+             'RingtoneManager.TYPE_RINGTONE' 'AudioAttributes.USAGE_NOTIFICATION_RINGTONE' \
+             'channel.enableVibration(true)' 'channel.setVibrationPattern(VIBRATION)' \
+             '.setTimeoutAfter(RING_CAP_MS)' 'deleteNotificationChannel(RETIRED_CHANNEL_ID)'; do
   grep -qF "$token" "$CALL" && pass "call notification has $token" || fail "call notification missing $token"
 done
 if grep -Eq 'DeliveryLedger\.|[^a-zA-Z_]ack\(|ACK_API|getSharedPreferences\(' "$CALL" "$STATE"; then
@@ -46,8 +50,8 @@ grep -qF 'CallState.apply(sentWith, true, id)' "$CALL" \
 # its response; a snapshot read at handlePayload time would fence nothing.
 for client in "$NATIVE/PushService.java" "$NATIVE/NotificationPollWorker.java"; do
   name="$(basename "$client")"
-  SNAP=$(grep -n 'CallState.Snapshot call = CallState.snapshot();' "$client" | cut -d: -f1 | head -1)
-  URLL=$(grep -n 'NotificationSupport.pollUrl(.*, call)' "$client" | cut -d: -f1 | head -1)
+  SNAP=$(grep -n 'CallState.Snapshot call = CallState.snapshot();' "$client" | cut -d: -f1 | head -1 || true)
+  URLL=$(grep -n 'NotificationSupport.pollUrl(.*, call)' "$client" | cut -d: -f1 | head -1 || true)
   if [[ -n "$SNAP" && -n "$URLL" && "$SNAP" -lt "$URLL" ]] \
       && grep -qF 'NotificationSupport.handlePayload(getApplicationContext(), payload, call);' "$client"; then
     pass "$name: snapshot taken before the request and passed to its response"
@@ -60,8 +64,8 @@ if grep -n 'CallState.snapshot()' "$SUPPORT" "$CALL" >/dev/null; then
 else
   pass "the response path never re-reads the snapshot"
 fi
-HANDLE=$(grep -n '^ *CallNotificationSupport.handleDelta(ctx, payload, call);$' "$SUPPORT" | cut -d: -f1 | head -1)
-EARLY=$(grep -n 'optBoolean("has_message", false)' "$SUPPORT" | cut -d: -f1 | head -1)
+HANDLE=$(grep -n '^ *CallNotificationSupport.handleDelta(ctx, payload, call);$' "$SUPPORT" | cut -d: -f1 | head -1 || true)
+EARLY=$(grep -n 'optBoolean("has_message", false)' "$SUPPORT" | cut -d: -f1 | head -1 || true)
 if [[ -n "$HANDLE" && -n "$EARLY" && "$HANDLE" -lt "$EARLY" ]] \
     && grep -qF 'public static void handleDelta(' "$CALL"; then
   pass "call delta (void, possibly stale) is applied before and independent of the message"
@@ -69,6 +73,21 @@ else
   fail "call delta must be a void statement before the message early return"
 fi
 grep -qF 'ack(ctx, id);' "$SUPPORT" && pass "message ack path unchanged" || fail "message ack path changed"
+# Insistent ringing must always end: a hard cap no longer than the server's
+# 60 s ring plus a little slack, and a tap on the notification stops it.
+CAP=$(sed -n -E 's/.*RING_CAP_MS = ([0-9_]+)L;.*/\1/p' "$CALL" | tr -d _ || true)
+if [[ -n "$CAP" && "$CAP" -ge 60000 && "$CAP" -le 90000 ]]; then
+  pass "insistent ring is capped at ${CAP} ms"
+else
+  fail "insistent ring needs RING_CAP_MS between 60 and 90 s (got '${CAP}')"
+fi
+STOP=$(grep -n 'CallNotificationSupport.stopRinging(this);' "$MAIN" | cut -d: -f1 | head -1 || true)
+LOAD=$(grep -n 'loadUrl(CallNotificationSupport.CALL_URL)' "$MAIN" | cut -d: -f1 | head -1 || true)
+if [[ -n "$STOP" && -n "$LOAD" && "$STOP" -lt "$LOAD" ]]; then
+  pass "opening the call page from the notification stops the ringing"
+else
+  fail "tapping the call notification must stop the ringing"
+fi
 grep -qF 'CallNotificationSupport.EXTRA_OPEN_CALL' "$MAIN" \
   && grep -qF 'loadUrl(CallNotificationSupport.CALL_URL)' "$MAIN" \
   && pass "call tap opens the call page" || fail "call tap must open /dash/call"

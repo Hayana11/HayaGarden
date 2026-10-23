@@ -1,12 +1,15 @@
 package xyz.lovestyle.home.canary;
 
 import android.Manifest;
+import android.app.Notification;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.app.PendingIntent;
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
+import android.media.AudioAttributes;
+import android.media.RingtoneManager;
 import android.os.Build;
 import androidx.core.app.NotificationCompat;
 import androidx.core.app.NotificationManagerCompat;
@@ -16,11 +19,20 @@ import org.json.JSONObject;
  * His incoming call, driven by the long poll's call delta (see CallState).
  * Not a delivery item: no DeliveryLedger, no ack. One open call at a time, so
  * one fixed notification id: a repeat updates it in place, "call": null
- * cancels it. Its own channel, because a channel's importance cannot be raised
- * after it exists.
+ * cancels it. Its own channel, because a channel's importance, sound and
+ * vibration cannot be changed after it exists (v1 rang once, so v2 replaces it).
+ *
+ * It rings like a call: the ringtone and vibration repeat (FLAG_INSISTENT)
+ * until the notification goes away: "call": null when the call is answered,
+ * declined or missed, a tap that opens the call page, or at the latest
+ * RING_CAP_MS, so a phone that misses the withdrawal never rings on and on.
  */
 public final class CallNotificationSupport {
-    public static final String CHANNEL_ID = "fyodor_call_v1";
+    public static final String CHANNEL_ID = "fyodor_call_v2";
+    static final String RETIRED_CHANNEL_ID = "fyodor_call_v1";
+    /** Server rings for 60 s (voice_call.store.RING_TIMEOUT_S); a little slack, then stop. */
+    static final long RING_CAP_MS = 65_000L;
+    private static final long[] VIBRATION = {0, 1000, 800, 1000, 800};
     public static final String CHANNEL_NAME = "费奥多尔来电";
     public static final int NOTIFICATION_ID = 0xCA11;
     public static final String CALL_URL = "https://love-style.xyz/dash/call";
@@ -79,8 +91,24 @@ public final class CallNotificationSupport {
         if (manager == null) {
             return;
         }
-        manager.createNotificationChannel(new NotificationChannel(
-                CHANNEL_ID, CHANNEL_NAME, NotificationManager.IMPORTANCE_HIGH));
+        NotificationChannel channel = new NotificationChannel(
+                CHANNEL_ID, CHANNEL_NAME, NotificationManager.IMPORTANCE_HIGH);
+        channel.setSound(
+                RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE),
+                new AudioAttributes.Builder()
+                        .setUsage(AudioAttributes.USAGE_NOTIFICATION_RINGTONE)
+                        .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                        .build());
+        channel.enableVibration(true);
+        channel.setVibrationPattern(VIBRATION);
+        channel.setLockscreenVisibility(Notification.VISIBILITY_PUBLIC);
+        manager.createNotificationChannel(channel);
+        manager.deleteNotificationChannel(RETIRED_CHANNEL_ID);
+    }
+
+    /** She opened the call page from the notification: stop ringing. */
+    public static void stopRinging(Context ctx) {
+        NotificationManagerCompat.from(ctx).cancel(NOTIFICATION_ID);
     }
 
     private static boolean canPost(Context ctx) {
@@ -111,7 +139,10 @@ public final class CallNotificationSupport {
                 .setPriority(NotificationCompat.PRIORITY_MAX)
                 .setOngoing(true)
                 .setAutoCancel(false)
+                .setTimeoutAfter(RING_CAP_MS)
                 .setContentIntent(tapIntent);
-        NotificationManagerCompat.from(ctx).notify(NOTIFICATION_ID, builder.build());
+        Notification notification = builder.build();
+        notification.flags |= Notification.FLAG_INSISTENT;  // ring and vibrate until it goes away
+        NotificationManagerCompat.from(ctx).notify(NOTIFICATION_ID, notification);
     }
 }
