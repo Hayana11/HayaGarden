@@ -62,10 +62,10 @@ pass "pure JVM segmenter/WAV tests"
 if [[ "${2:-}" != "" ]]; then
   APK="$2"
   [[ -f "$APK" ]] || { echo "missing APK $APK" >&2; exit 1; }
-  unzip -l "$APK" | grep -q 'assets/silero_vad.onnx'     && pass "APK contains silero_vad.onnx" || fail "APK does not contain Silero model"
   apk_listing="$(unzip -l "$APK")"
-  echo "$apk_listing" | grep -q 'lib/arm64-v8a/'     && pass "APK contains arm64-v8a native libraries" || fail "APK has no arm64-v8a native libraries"
-  if echo "$apk_listing" | grep -Eq 'lib/(armeabi-v7a|x86|x86_64)/'; then
+  grep -Eq 'assets/silero_vad.onnx' <<<"$apk_listing"     && pass "APK contains silero_vad.onnx" || fail "APK does not contain Silero model"
+  grep -Eq 'lib/arm64-v8a/' <<<"$apk_listing"     && pass "APK contains arm64-v8a native libraries" || fail "APK has no arm64-v8a native libraries"
+  if grep -Eq 'lib/(armeabi-v7a|x86|x86_64)/' <<<"$apk_listing"; then
     fail "APK contains a non-arm64 ABI"
   else
     pass "APK contains no non-arm64 ABI"
