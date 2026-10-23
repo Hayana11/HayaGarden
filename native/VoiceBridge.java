@@ -188,9 +188,11 @@ public final class VoiceBridge implements AutoCloseable, VoiceCapture.Listener {
             return;
         }
         ArrayDeque<Integer> droppedSeqs = new ArrayDeque<>();
+        boolean queueDropped = false;
         synchronized (queueLock) {
             if (wav.length > MAX_QUEUED_BYTES) {
                 droppedSeqs.add(seq);
+                queueDropped = true;
             } else {
                 while (!queue.isEmpty()
                         && (queue.size() >= MAX_QUEUED_UTTERANCES
@@ -198,6 +200,7 @@ public final class VoiceBridge implements AutoCloseable, VoiceCapture.Listener {
                     QueuedUtterance old = queue.removeFirst();
                     queuedBytes -= old.wav.length;
                     droppedSeqs.add(old.seq);
+                    queueDropped = true;
                 }
                 queue.addLast(new QueuedUtterance(
                         seq, wav, samples.length * 1000 / VoiceSegmenter.SAMPLE_RATE));
@@ -211,7 +214,7 @@ public final class VoiceBridge implements AutoCloseable, VoiceCapture.Listener {
             emitError("queue_full");
             return;
         }
-        if (!droppedSeqs.isEmpty()) emitError("queue_full");
+        if (queueDropped) emitError("queue_full");
         try {
             emitJson(new JSONObject()
                     .put("type", "utterance_ready")
