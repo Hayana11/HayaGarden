@@ -134,9 +134,12 @@ public final class NotificationSupport {
         return true;
     }
 
-    /** Ack-protocol poll URL. No cursor: every delivery is confirmed by an explicit per-id ack. */
+    /**
+     * Ack-protocol poll URL. No cursor: every delivery is confirmed by an explicit per-id ack.
+     * known_call is the incoming call this process shows (state, never an ack; see CallState).
+     */
     public static String pollUrl(Context ctx, int waitSeconds) {
-        return API + "?protocol=ack&wait=" + waitSeconds;
+        return API + "?protocol=ack&wait=" + waitSeconds + CallNotificationSupport.pollQuery();
     }
 
     /**
@@ -144,6 +147,8 @@ public final class NotificationSupport {
      * then acknowledge it. Shared by NotificationPollWorker and PushService.
      */
     public static Delivery handlePayload(Context ctx, JSONObject payload) {
+        // The call delta rides beside the message and never waits on it or its ack.
+        CallNotificationSupport.handleDelta(ctx, payload);
         if (payload == null || !payload.optBoolean("has_message", false)) {
             return Delivery.NOTHING;
         }

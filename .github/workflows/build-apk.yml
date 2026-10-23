@@ -96,6 +96,9 @@ jobs:
       - name: P2B contract test
         run: bash scripts/test-p2b-native-notifications.sh
 
+      - name: P2G call notification contract test
+        run: bash scripts/test-p2g-call-notification.sh android
+
       - name: P2C.1 contract test
         run: bash scripts/test-p2c1-physical.sh
 
