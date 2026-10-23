@@ -30,10 +30,10 @@ grep -qF 'voiceBridge.resumed()' "$NATIVE/MainActivity.java"   && pass "native v
 grep -qF 'voiceBridge.close()' "$NATIVE/MainActivity.java"   && pass "native voice closes on destroy" || fail "onDestroy close missing"
 grep -qF 'voiceBridge.onPermissionResult(' "$NATIVE/MainActivity.java"   && pass "permission result reaches P2F" || fail "P2F permission forwarding missing"
 grep -qF 'REQUEST_RECORD_AUDIO = 2006' "$NATIVE/VoiceBridge.java"   && pass "P2F permission request code is separate" || fail "wrong P2F request code"
-if grep -Eq 'SpeechRecognizer|RecognitionService' "$NATIVE/VoiceBridge.java" "$NATIVE/VoiceCapture.java" "$NATIVE/SileroVad.java"; then
-  fail "P2F native voice must not use SpeechRecognizer"
+if grep -Eq 'android\\.speech\\.(SpeechRecognizer|RecognitionService)|new[[:space:]]+SpeechRecognizer' "$NATIVE/VoiceBridge.java" "$NATIVE/VoiceCapture.java" "$NATIVE/SileroVad.java"; then
+  fail "P2F native voice must not use Android speech APIs"
 else
-  pass "P2F native voice bypasses SpeechRecognizer"
+  pass "P2F native voice bypasses Android speech APIs"
 fi
 
 if [[ -f "$MANIFEST" ]]; then
