@@ -1,5 +1,12 @@
 # AGENTS.md — HayaGarden
 
+> **RETIRED — do not develop here.** This `main` branch is the old shell `xyz.lovestyle.home`,
+> no longer installed or maintained. All new work goes to the **Elpis Canary** shell
+> (`xyz.lovestyle.home.canary`), currently on the stacked branches starting at
+> `cursor/health-heart-rate-model-view-r4-ddac` (see its `AGENTS.md`). Features that exist only
+> here (ScreenCapture, Pocket, AppTracker, legacy push) are retired, not pending ports. The
+> old shell will be deleted once the Canary is feature-complete.
+
 `HayaGarden` is a **Capacitor 6 Android WebView shell** (app id `xyz.lovestyle.home`). It has no UI of
 its own — it loads the production website (`server.url` in `capacitor.config.json`) and adds native
 device behaviors (push, geo, screenshot, back button) that are injected at build time by
