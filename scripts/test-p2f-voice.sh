@@ -31,10 +31,10 @@ grep -qF 'voiceBridge.release()' "$NATIVE/MainActivity.java"   && pass "native c
 grep -qF 'voiceBridge.resumed()' "$NATIVE/MainActivity.java"   && pass "native voice receives resume" || fail "onResume callback missing"
 grep -qF 'voiceBridge.close()' "$NATIVE/MainActivity.java"   && pass "native voice closes on destroy" || fail "onDestroy close missing"
 grep -qF 'voiceBridge.onPermissionResult(' "$NATIVE/MainActivity.java"   && pass "permission result reaches P2F" || fail "P2F permission forwarding missing"
-if grep -Eq 'NEXT_SEQ\.(set|getAndSet|lazySet|compareAndSet)\(|nextSeq[[:space:]]*=' "$NATIVE/VoiceBridge.java"; then
+if grep -Eq 'putInt\(SEQ_KEY,[[:space:]]*0\)|remove\(SEQ_KEY\)|SEQ_PREFS.*\.clear\(|nextSeq[[:space:]]*=' "$NATIVE/VoiceBridge.java"; then
   fail "P2F utterance seq must never be reset (server dedupes by seq within a call)"
 else
-  grep -qF 'NEXT_SEQ.incrementAndGet()' "$NATIVE/VoiceBridge.java"     && pass "P2F utterance seq is process-monotonic across mic off/on" || fail "P2F utterance seq allocation missing"
+  grep -qF 'int seq = allocateSeq();' "$NATIVE/VoiceBridge.java"     && grep -qF 'prefs.edit().putInt(SEQ_KEY, seq).commit();' "$NATIVE/VoiceBridge.java"     && pass "P2F utterance seq is persisted and monotonic across mic off/on and restarts"     || fail "P2F persisted utterance seq allocation missing"
 fi
 grep -qF 'REQUEST_RECORD_AUDIO = 2006' "$NATIVE/VoiceBridge.java"   && pass "P2F permission request code is separate" || fail "wrong P2F request code"
 if grep -Eq 'android\\.speech\\.(SpeechRecognizer|RecognitionService)|new[[:space:]]+SpeechRecognizer' "$NATIVE/VoiceBridge.java" "$NATIVE/VoiceCapture.java" "$NATIVE/SileroVad.java"; then

@@ -2,12 +2,13 @@ package xyz.lovestyle.home.canary;
 
 import android.Manifest;
 import android.app.Activity;
+import android.content.Context;
+import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.util.Base64;
 import android.webkit.JavascriptInterface;
 import android.webkit.WebView;
 import java.util.ArrayDeque;
-import java.util.concurrent.atomic.AtomicInteger;
 import org.json.JSONObject;
 
 /**
@@ -19,12 +20,15 @@ public final class VoiceBridge implements AutoCloseable, VoiceCapture.Listener {
     private static final int MAX_QUEUED_UTTERANCES = 4;
     private static final int MAX_QUEUED_BYTES = 4 * 1024 * 1024;
     /**
-     * The server orders one call's speech by these numbers, so they only grow
-     * for the life of the process: a mic-off cancel(), a pause or an Activity
-     * rebuild must never hand out a number the current call already used. A
-     * new call needs no reset; the server skips numbers that never began there.
+     * The server orders one call's speech by these numbers, so they only grow,
+     * persisted across process restarts: a mic-off cancel(), a pause, an
+     * Activity rebuild or a killed process must never hand out a number the
+     * current call already used. A new call needs no reset; the server skips
+     * numbers that never began there in one step.
      */
-    private static final AtomicInteger NEXT_SEQ = new AtomicInteger();
+    private static final String SEQ_PREFS = "elpis_voice_seq";
+    private static final String SEQ_KEY = "last_seq";
+    private static final Object SEQ_LOCK = new Object();
 
     private static final class QueuedUtterance {
         final int seq;
@@ -164,9 +168,8 @@ public final class VoiceBridge implements AutoCloseable, VoiceCapture.Listener {
 
     @Override
     public void onSpeechStart() {
-        int seq;
+        int seq = allocateSeq();
         synchronized (queueLock) {
-            seq = NEXT_SEQ.incrementAndGet();
             activeSeq = seq;
         }
         try {
@@ -254,6 +257,17 @@ public final class VoiceBridge implements AutoCloseable, VoiceCapture.Listener {
     @Override
     public void onError(String code) {
         emitError(code);
+    }
+
+    /** Runs on the capture thread; the number is on disk before any event names it. */
+    private int allocateSeq() {
+        synchronized (SEQ_LOCK) {
+            SharedPreferences prefs = activity.getApplicationContext()
+                    .getSharedPreferences(SEQ_PREFS, Context.MODE_PRIVATE);
+            int seq = prefs.getInt(SEQ_KEY, 0) + 1;
+            prefs.edit().putInt(SEQ_KEY, seq).commit();
+            return seq;
+        }
     }
 
     private void stopCapture(String reason) {
