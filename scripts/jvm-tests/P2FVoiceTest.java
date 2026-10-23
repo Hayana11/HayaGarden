@@ -85,8 +85,9 @@ public final class P2FVoiceTest {
         VoiceSegmenter segmenter = new VoiceSegmenter();
         segmenter.accept(LOW, 0.8f);
         VoiceSegmenter.Result result = null;
-        for (int i = 0; i < 1000 && result == null; i++) {
+        for (int i = 0; i < 1000; i++) {
             result = segmenter.accept(LOW, 0.8f);
+            if (result.utterance != null || result.discarded) break;
         }
         check(result != null && result.utterance != null, "max utterance did not flush");
         check(result.utterance.length <= VoiceSegmenter.MAX_UTTERANCE_SAMPLES,
