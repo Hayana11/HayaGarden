@@ -108,7 +108,7 @@ if [[ -f "$MANIFEST" ]]; then
   else
     pass "manifest has no forbidden permission"
   fi
-  for name in MainActivity NativeBridge NotificationBridge NotificationSupport NotificationPollWorker; do
+  for name in MainActivity NativeBridge NotificationBridge NotificationSupport NotificationPollWorker DeliveryLedger; do
     [[ -f "$GEN_JAVA/$name.java" ]] && pass "generated $name.java exists" || fail "generated $name.java missing"
   done
 fi

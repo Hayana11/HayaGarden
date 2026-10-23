@@ -17,10 +17,11 @@ import java.net.URL;
 import org.json.JSONObject;
 
 /**
- * P2D: one held-open HTTP long poll so wake messages reach the phone within
- * about a second. The 15-minute NotificationPollWorker remains the fallback
- * when the system kills this service; both read the same server-side
- * delivered flag, so a message is shown once.
+ * P2D: one held-open HTTP long poll (ack protocol) so wake messages reach the
+ * phone within about a second. The 15-minute NotificationPollWorker remains
+ * the fallback when the system kills this service. Both go through
+ * NotificationSupport.handlePayload: shown at most once per id on the device,
+ * then acknowledged; an unacknowledged message is handed out again.
  */
 public class PushService extends Service {
     static final String CHANNEL_ID = "elpis_push_keepalive";
@@ -92,16 +93,7 @@ public class PushService extends Service {
             try {
                 JSONObject payload = fetchOnce();
                 backoffS = 0;
-                if (payload.optBoolean("has_message", false)) {
-                    String content = payload.optString("content", "");
-                    if (!content.trim().isEmpty()) {
-                        NotificationSupport.showNotification(
-                                getApplicationContext(),
-                                payload.optString("title", ""),
-                                content,
-                                payload.optString("id", ""));
-                    }
-                }
+                NotificationSupport.handlePayload(getApplicationContext(), payload);
                 long elapsed = SystemClock.elapsedRealtime() - started;
                 if (elapsed < MIN_CYCLE_MS) {
                     Thread.sleep(MIN_CYCLE_MS - elapsed);
@@ -122,7 +114,7 @@ public class PushService extends Service {
     private JSONObject fetchOnce() throws Exception {
         HttpURLConnection connection = null;
         try {
-            URL url = new URL(NotificationSupport.API + "?wait=" + WAIT_S);
+            URL url = new URL(NotificationSupport.pollUrl(this, WAIT_S));
             connection = (HttpURLConnection) url.openConnection();
             connection.setRequestMethod("GET");
             connection.setConnectTimeout(10000);

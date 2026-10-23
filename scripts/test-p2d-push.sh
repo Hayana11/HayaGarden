@@ -25,10 +25,28 @@ grep -qF 'FOREGROUND_SERVICE_TYPE_REMOTE_MESSAGING' "$SERVICE" \
 if grep -qE 'FOREGROUND_SERVICE_TYPE_(DATA_SYNC|LOCATION|MEDIA_PROJECTION|MICROPHONE|CAMERA)' "$SERVICE"; then
   fail "service must not use a time-limited or sensitive foreground type"
 fi
-grep -qF 'NotificationSupport.API + "?wait="' "$SERVICE" \
-  && pass "long poll uses the P2B endpoint with wait" || fail "long poll must reuse NotificationSupport.API with ?wait="
-grep -qF 'NotificationSupport.showNotification' "$SERVICE" \
-  && pass "display goes through NotificationSupport" || fail "service must display via NotificationSupport"
+grep -qF 'NotificationSupport.pollUrl(this, WAIT_S)' "$SERVICE" \
+  && pass "long poll uses the ack-protocol URL with wait" || fail "long poll must use NotificationSupport.pollUrl(this, WAIT_S)"
+grep -qF 'protocol=ack&wait=' "$SUPPORT" && grep -qF '&since=' "$SUPPORT" \
+  && pass "poll URL speaks the ack protocol with a since cursor" || fail "pollUrl must request protocol=ack with wait and since"
+for client in "$SERVICE" "$NATIVE/NotificationPollWorker.java"; do
+  grep -qF 'NotificationSupport.handlePayload' "$client" \
+    && pass "$(basename "$client") delivers through handlePayload (show once, then ack)" \
+    || fail "$(basename "$client") must deliver through NotificationSupport.handlePayload"
+done
+grep -qF 'DeliveryLedger.deliver' "$SUPPORT" && grep -qF 'synchronized (LOCK)' "$NATIVE/DeliveryLedger.java" \
+  && pass "dedupe runs inside the shared ledger lock" || fail "dedupe must go through DeliveryLedger under its lock"
+grep -qF '.commit()' "$SUPPORT" && ! grep -qF '.apply()' "$SUPPORT" \
+  && pass "ledger writes are synchronous" || fail "ledger must persist with commit(), not apply()"
+
+LEDGER_OUT="$(mktemp -d)"
+if javac -d "$LEDGER_OUT" "$NATIVE/DeliveryLedger.java" "$ROOT/scripts/jvm-tests/DeliveryLedgerTest.java" \
+    && java -cp "$LEDGER_OUT" xyz.lovestyle.home.canary.DeliveryLedgerTest; then
+  pass "DeliveryLedger JVM contract"
+else
+  fail "DeliveryLedger JVM contract"
+fi
+rm -rf "$LEDGER_OUT"
 grep -qF 'MIN_CYCLE_MS' "$SERVICE" \
   && pass "service has a minimum cycle guard" || fail "service must not spin against a server that ignores wait"
 if grep -qiE '"command"|screenshot|ScreenCapture|Pocket|location|AppTracker|setRequestMethod\("(POST|PUT|PATCH|DELETE)"\)' "$SERVICE"; then
