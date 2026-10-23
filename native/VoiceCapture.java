@@ -1,6 +1,6 @@
 package xyz.lovestyle.home.canary;
 
-import android.media.AcousticEchoCanceler;
+import android.media.audiofx.AcousticEchoCanceler;
 import android.media.AudioFormat;
 import android.media.AudioRecord;
 import android.media.MediaRecorder;
