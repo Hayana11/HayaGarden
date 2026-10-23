@@ -77,7 +77,8 @@ public final class P2FVoiceTest {
         }
         VoiceSegmenter.Result result = null;
         for (int i = 0; i < 22; i++) result = segmenter.accept(LOW, 0.0f);
-        check(result != null && result.discarded, "hysteresis silence did not end");
+        check(result != null && result.utterance != null,
+                "hysteresis silence did not produce an utterance");
     }
 
     private static void testMaxFlush() {
