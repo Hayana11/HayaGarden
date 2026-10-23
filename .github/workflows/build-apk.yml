@@ -54,6 +54,12 @@ jobs:
       - name: Sync Capacitor
         run: npx cap sync android
 
+      - name: Stamp build version
+        env:
+          BUILD_NUMBER: ${{ github.run_number }}
+          BUILD_SHA: ${{ github.sha }}
+        run: bash scripts/apply-build-version.sh
+
       - name: Inject AGConnect config when configured
         env:
           AGCONNECT_SERVICES_JSON_B64: ${{ secrets.AGCONNECT_SERVICES_JSON_B64 }}
