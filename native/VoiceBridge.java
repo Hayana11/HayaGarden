@@ -187,24 +187,31 @@ public final class VoiceBridge implements AutoCloseable, VoiceCapture.Listener {
             emitError("wav_encode");
             return;
         }
-        boolean dropped = false;
+        ArrayDeque<Integer> droppedSeqs = new ArrayDeque<>();
         synchronized (queueLock) {
             if (wav.length > MAX_QUEUED_BYTES) {
-                emitError("queue_full");
-                return;
+                droppedSeqs.add(seq);
+            } else {
+                while (!queue.isEmpty()
+                        && (queue.size() >= MAX_QUEUED_UTTERANCES
+                        || queuedBytes + wav.length > MAX_QUEUED_BYTES)) {
+                    QueuedUtterance old = queue.removeFirst();
+                    queuedBytes -= old.wav.length;
+                    droppedSeqs.add(old.seq);
+                }
+                queue.addLast(new QueuedUtterance(
+                        seq, wav, samples.length * 1000 / VoiceSegmenter.SAMPLE_RATE));
+                queuedBytes += wav.length;
             }
-            while (!queue.isEmpty()
-                    && (queue.size() >= MAX_QUEUED_UTTERANCES
-                    || queuedBytes + wav.length > MAX_QUEUED_BYTES)) {
-                QueuedUtterance old = queue.removeFirst();
-                queuedBytes -= old.wav.length;
-                dropped = true;
-            }
-            queue.addLast(new QueuedUtterance(
-                    seq, wav, samples.length * 1000 / VoiceSegmenter.SAMPLE_RATE));
-            queuedBytes += wav.length;
         }
-        if (dropped) emitError("queue_full");
+        while (!droppedSeqs.isEmpty()) {
+            emitDiscarded(droppedSeqs.removeFirst(), "queue_full");
+        }
+        if (wav.length > MAX_QUEUED_BYTES) {
+            emitError("queue_full");
+            return;
+        }
+        if (!droppedSeqs.isEmpty()) emitError("queue_full");
         try {
             emitJson(new JSONObject()
                     .put("type", "utterance_ready")
@@ -222,7 +229,10 @@ public final class VoiceBridge implements AutoCloseable, VoiceCapture.Listener {
             seq = activeSeq;
             activeSeq = 0;
         }
-        if (seq == 0) return;
+        if (seq != 0) emitDiscarded(seq, reason);
+    }
+
+    private void emitDiscarded(int seq, String reason) {
         try {
             emitJson(new JSONObject()
                     .put("type", "utterance_discarded")
@@ -244,15 +254,7 @@ public final class VoiceBridge implements AutoCloseable, VoiceCapture.Listener {
             activeSeq = 0;
         }
         capture.stop();
-        if (abandoned != 0) {
-            try {
-                emitJson(new JSONObject()
-                        .put("type", "utterance_discarded")
-                        .put("seq", abandoned)
-                        .put("reason", reason));
-            } catch (Exception ignored) {
-            }
-        }
+        if (abandoned != 0) emitDiscarded(abandoned, reason);
         if ("paused".equals(reason)) emitType("paused");
     }
 
