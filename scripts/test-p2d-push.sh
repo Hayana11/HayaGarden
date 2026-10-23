@@ -27,8 +27,13 @@ if grep -qE 'FOREGROUND_SERVICE_TYPE_(DATA_SYNC|LOCATION|MEDIA_PROJECTION|MICROP
 fi
 grep -qF 'NotificationSupport.pollUrl(this, WAIT_S)' "$SERVICE" \
   && pass "long poll uses the ack-protocol URL with wait" || fail "long poll must use NotificationSupport.pollUrl(this, WAIT_S)"
-grep -qF 'protocol=ack&wait=' "$SUPPORT" && grep -qF '&since=' "$SUPPORT" \
-  && pass "poll URL speaks the ack protocol with a since cursor" || fail "pollUrl must request protocol=ack with wait and since"
+grep -qF 'protocol=ack&wait=' "$SUPPORT" \
+  && pass "poll URL speaks the ack protocol with wait" || fail "pollUrl must request protocol=ack with wait"
+if grep -qE 'since=|readCursor|wakeNumber' "$SUPPORT" "$NATIVE/DeliveryLedger.java" "$SERVICE" "$NATIVE/NotificationPollWorker.java"; then
+  fail "clients must not send a since cursor: acks are explicit per id"
+else
+  pass "no since cursor in clients (acks are explicit per id)"
+fi
 for client in "$SERVICE" "$NATIVE/NotificationPollWorker.java"; do
   grep -qF 'NotificationSupport.handlePayload' "$client" \
     && pass "$(basename "$client") delivers through handlePayload (show once, then ack)" \

@@ -9,15 +9,13 @@ public final class DeliveryLedgerTest {
     /** Stands in for SharedPreferences: survives "restarts" by sharing the backing fields. */
     static final class Disk {
         volatile String shown = "";
-        volatile long cursor = 0L;
     }
 
     static final class DiskStore implements DeliveryLedger.Store {
         final Disk disk;
         DiskStore(Disk disk) { this.disk = disk; }
         @Override public String readShownIds() { return disk.shown; }
-        @Override public long readCursor() { return disk.cursor; }
-        @Override public void write(String shownIds, long cursor) { disk.shown = shownIds; disk.cursor = cursor; }
+        @Override public void write(String shownIds) { disk.shown = shownIds; }
     }
 
     static int failures = 0;
@@ -32,7 +30,7 @@ public final class DeliveryLedgerTest {
         repeatedIdShownOnce();
         restartRemembersOldIds();
         notShownIsNotRecorded();
-        boundedListAndMonotonicCursor();
+        boundedList();
         if (failures > 0) {
             System.out.println("DeliveryLedger contract FAILED (" + failures + ")");
             System.exit(1);
@@ -92,27 +90,29 @@ public final class DeliveryLedgerTest {
         AtomicInteger shownAfterRestart = new AtomicInteger();
         DeliveryLedger.Result r = DeliveryLedger.deliver(new DiskStore(disk), "wake-11",
                 () -> shownAfterRestart.incrementAndGet() > 0);
-        check(r == DeliveryLedger.Result.ALREADY_SHOWN && shownAfterRestart.get() == 0 && disk.cursor == 11L,
-                "after an app restart an old id is not shown again and the cursor survives");
+        check(r == DeliveryLedger.Result.ALREADY_SHOWN && shownAfterRestart.get() == 0,
+                "after an app restart an old id is not shown again");
     }
 
     static void notShownIsNotRecorded() {
         Disk disk = new Disk();
         DeliveryLedger.Result denied = DeliveryLedger.deliver(new DiskStore(disk), "wake-5", () -> false);
         DeliveryLedger.Result later = DeliveryLedger.deliver(new DiskStore(disk), "wake-5", () -> true);
-        check(denied == DeliveryLedger.Result.NOT_SHOWN && later == DeliveryLedger.Result.SHOWN && disk.cursor == 5L,
+        check(denied == DeliveryLedger.Result.NOT_SHOWN && later == DeliveryLedger.Result.SHOWN,
                 "without notification permission nothing is recorded, so it is shown once permission returns");
     }
 
-    static void boundedListAndMonotonicCursor() {
+    static void boundedList() {
         Disk disk = new Disk();
         for (int i = 1; i <= DeliveryLedger.KEPT + 10; i++) {
             final int n = i;
             DeliveryLedger.deliver(new DiskStore(disk), "wake-" + n, () -> true);
         }
-        DeliveryLedger.deliver(new DiskStore(disk), "wake-2", () -> true);
         int kept = disk.shown.split("\n").length;
-        check(kept == DeliveryLedger.KEPT && disk.cursor == DeliveryLedger.KEPT + 10L,
-                "ledger keeps the newest " + DeliveryLedger.KEPT + " ids and the cursor never moves backwards");
+        AtomicInteger shownAgain = new AtomicInteger();
+        DeliveryLedger.Result newest = DeliveryLedger.deliver(new DiskStore(disk), "wake-" + (DeliveryLedger.KEPT + 10),
+                () -> shownAgain.incrementAndGet() > 0);
+        check(kept == DeliveryLedger.KEPT && newest == DeliveryLedger.Result.ALREADY_SHOWN && shownAgain.get() == 0,
+                "ledger keeps the newest " + DeliveryLedger.KEPT + " ids");
     }
 }

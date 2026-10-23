@@ -7,6 +7,8 @@ import java.util.List;
 /**
  * Device-side "show each wake id once" ledger, free of Android types so it can be
  * tested on a plain JVM. NotificationSupport backs it with SharedPreferences.
+ * There is deliberately no "highest id seen" cursor: with two pollers it cannot
+ * prove that every lower id was shown, so acks are always explicit per id.
  *
  * The check -> show -> record sequence runs under one lock shared by every
  * caller in the process (NotificationPollWorker and PushService), and records
@@ -17,9 +19,8 @@ final class DeliveryLedger {
 
     interface Store {
         String readShownIds();
-        long readCursor();
         /** Must be durable when it returns (SharedPreferences.commit, not apply). */
-        void write(String shownIds, long cursor);
+        void write(String shownIds);
     }
 
     interface Display {
@@ -46,19 +47,8 @@ final class DeliveryLedger {
             while (shown.size() > KEPT) {
                 shown.remove(0);
             }
-            store.write(String.join("\n", shown), Math.max(store.readCursor(), wakeNumber(id)));
+            store.write(String.join("\n", shown));
             return Result.SHOWN;
-        }
-    }
-
-    static long wakeNumber(String id) {
-        if (id == null || !id.startsWith("wake-")) {
-            return 0L;
-        }
-        try {
-            return Long.parseLong(id.substring(5));
-        } catch (NumberFormatException e) {
-            return 0L;
         }
     }
 

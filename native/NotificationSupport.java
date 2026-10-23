@@ -40,7 +40,8 @@ public final class NotificationSupport {
             "https://love-style.xyz/api/wake_log/ack";
     private static final String DELIVERY_PREFS = "elpis_delivery";
     private static final String KEY_SHOWN_IDS = "shown_ids";
-    private static final String KEY_CURSOR = "wake_cursor";
+    /** Cursor written by earlier ack-protocol builds; removed on the next ledger write. */
+    private static final String KEY_LEGACY_CURSOR = "wake_cursor";
 
     /** Outcome of handing one delivered payload to the device. */
     public enum Delivery { SHOWN, ALREADY_SHOWN, NOT_SHOWN, NOTHING }
@@ -133,13 +134,9 @@ public final class NotificationSupport {
         return true;
     }
 
-    /**
-     * Ack-protocol poll URL. since is the highest wake id this device has shown,
-     * which lets the server recover an ack lost before a reboot.
-     */
+    /** Ack-protocol poll URL. No cursor: every delivery is confirmed by an explicit per-id ack. */
     public static String pollUrl(Context ctx, int waitSeconds) {
-        long cursor = prefs(ctx).getLong(KEY_CURSOR, 0L);
-        return API + "?protocol=ack&wait=" + waitSeconds + "&since=" + cursor;
+        return API + "?protocol=ack&wait=" + waitSeconds;
     }
 
     /**
@@ -169,13 +166,10 @@ public final class NotificationSupport {
                     @Override public String readShownIds() {
                         return sp.getString(KEY_SHOWN_IDS, "");
                     }
-                    @Override public long readCursor() {
-                        return sp.getLong(KEY_CURSOR, 0L);
-                    }
-                    @Override public void write(String shownIds, long cursor) {
+                    @Override public void write(String shownIds) {
                         sp.edit()
                                 .putString(KEY_SHOWN_IDS, shownIds)
-                                .putLong(KEY_CURSOR, cursor)
+                                .remove(KEY_LEGACY_CURSOR)
                                 .commit();
                     }
                 },
@@ -205,7 +199,7 @@ public final class NotificationSupport {
         return true;
     }
 
-    /** Best effort and idempotent server-side; a lost ack is recovered by the since cursor. */
+    /** Best effort and idempotent server-side; a lost ack is recovered by re-delivery after the lease. */
     public static void ack(Context ctx, String id) {
         HttpURLConnection connection = null;
         try {
