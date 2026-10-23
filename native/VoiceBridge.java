@@ -169,6 +169,11 @@ public final class VoiceBridge implements AutoCloseable, VoiceCapture.Listener {
     @Override
     public void onSpeechStart() {
         int seq = allocateSeq();
+        if (seq == 0) {
+            // Not on disk: a restart could hand it out again, so this utterance is dropped.
+            emitError("seq_persist_failed");
+            return;
+        }
         synchronized (queueLock) {
             activeSeq = seq;
         }
@@ -259,14 +264,13 @@ public final class VoiceBridge implements AutoCloseable, VoiceCapture.Listener {
         emitError(code);
     }
 
-    /** Runs on the capture thread; the number is on disk before any event names it. */
+    /** Runs on the capture thread; the number is on disk before any event names it, else 0. */
     private int allocateSeq() {
         synchronized (SEQ_LOCK) {
             SharedPreferences prefs = activity.getApplicationContext()
                     .getSharedPreferences(SEQ_PREFS, Context.MODE_PRIVATE);
             int seq = prefs.getInt(SEQ_KEY, 0) + 1;
-            prefs.edit().putInt(SEQ_KEY, seq).commit();
-            return seq;
+            return prefs.edit().putInt(SEQ_KEY, seq).commit() ? seq : 0;
         }
     }
 
