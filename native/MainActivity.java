@@ -27,6 +27,7 @@ public class MainActivity extends BridgeActivity {
     private HmsActivityStore hmsActivityStore;
     private HealthStateStore healthStateStore;
     private ActivityResultLauncher<Set<String>> healthPermissionLauncher;
+    private SpeechBridge speechBridge;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -74,6 +75,8 @@ public class MainActivity extends BridgeActivity {
                 new InsetsBridge(getApplicationContext(), webView),
                 "ElpisInsets"
             );
+            speechBridge = new SpeechBridge(this, webView);
+            webView.addJavascriptInterface(speechBridge, "ElpisSpeech");
         }
 
         HealthSupport.ensureScheduled(this);
@@ -165,6 +168,9 @@ public class MainActivity extends BridgeActivity {
         if (physicalStateStore != null) {
             physicalStateStore.stop();
         }
+        if (speechBridge != null) {
+            speechBridge.release();
+        }
         // HMS updates intentionally remain registered while backgrounded.
         super.onPause();
     }
@@ -185,6 +191,9 @@ public class MainActivity extends BridgeActivity {
     public void onRequestPermissionsResult(
             int requestCode, String[] permissions, int[] grantResults) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        if (speechBridge != null) {
+            speechBridge.onPermissionResult(requestCode, grantResults);
+        }
         if (requestCode == REQUEST_HMS_ACTIVITY_PERMISSION
                 && hmsActivityStore != null
                 && grantResults.length > 0

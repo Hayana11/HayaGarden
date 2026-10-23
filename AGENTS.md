@@ -14,7 +14,13 @@ Lifted by the owner for later phases so far:
 - P2D (2026-10-23): `PushService` remoteMessaging foreground service holding a
   `pending_notification?wait=25` long poll, started only through
   `PushSupport.ensureRunning`, plus `PushBootReceiver`. Contract:
-  `scripts/test-p2d-push.sh`. Trackers, capture, Pocket and GPS stay forbidden.
+  `scripts/test-p2d-push.sh`.
+- P2E (2026-10-23): `SpeechBridge` (`window.ElpisSpeech`) for call-page
+  speech-to-text via `android.speech.SpeechRecognizer`; `RECORD_AUDIO`, requested
+  only from a tap on the mic, released on pause, no raw-audio recording, no
+  background microphone service. Contract: `scripts/test-p2e-speech.sh`.
+
+Trackers, capture, Pocket and GPS stay forbidden.
 Do **not** modify Draft PR #14 or the production appId `xyz.lovestyle.home`.
 
 ## Build

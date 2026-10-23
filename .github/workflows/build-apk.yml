@@ -75,6 +75,9 @@ jobs:
       - name: Apply P2D push long poll
         run: bash scripts/apply-p2d-push.sh
 
+      - name: Apply P2E speech bridge
+        run: bash scripts/apply-p2e-speech.sh
+
       - name: Health Bridge R1 contract test
         run: bash scripts/test-health-r1.sh
 
@@ -95,6 +98,9 @@ jobs:
 
       - name: P2D push contract test
         run: bash scripts/test-p2d-push.sh
+
+      - name: P2E speech contract test
+        run: bash scripts/test-p2e-speech.sh
 
       - name: Generate app icons
         run: |

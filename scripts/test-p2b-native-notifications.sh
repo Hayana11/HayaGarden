@@ -102,8 +102,9 @@ if [[ -f "$MANIFEST" ]]; then
   for need in INTERNET PACKAGE_USAGE_STATS REQUEST_IGNORE_BATTERY_OPTIMIZATIONS POST_NOTIFICATIONS; do
     grep -q "android.permission.$need" "$MANIFEST" && pass "manifest has $need" || fail "manifest missing $need"
   done
-  # FOREGROUND_SERVICE, FOREGROUND_SERVICE_REMOTE_MESSAGING and RECEIVE_BOOT_COMPLETED belong to P2D.
-  if grep -Eq 'android.permission.(FOREGROUND_SERVICE_(DATA_SYNC|LOCATION|MEDIA_PROJECTION|CAMERA|MICROPHONE|PHONE_CALL)|ACCESS_.*LOCATION|CAMERA|RECORD_AUDIO)"' "$MANIFEST"; then
+  # FOREGROUND_SERVICE, FOREGROUND_SERVICE_REMOTE_MESSAGING and RECEIVE_BOOT_COMPLETED belong to P2D;
+  # RECORD_AUDIO belongs to P2E (owner-approved 2026-10-23, contract: test-p2e-speech.sh).
+  if grep -Eq 'android.permission.(FOREGROUND_SERVICE_(DATA_SYNC|LOCATION|MEDIA_PROJECTION|CAMERA|MICROPHONE|PHONE_CALL)|ACCESS_.*LOCATION|CAMERA)"' "$MANIFEST"; then
     fail "manifest contains forbidden permission"
   else
     pass "manifest has no forbidden permission"
