@@ -7,6 +7,7 @@ import android.util.Base64;
 import android.webkit.JavascriptInterface;
 import android.webkit.WebView;
 import java.util.ArrayDeque;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.json.JSONObject;
 
 /**
@@ -17,6 +18,13 @@ public final class VoiceBridge implements AutoCloseable, VoiceCapture.Listener {
     public static final int REQUEST_RECORD_AUDIO = 2006;
     private static final int MAX_QUEUED_UTTERANCES = 4;
     private static final int MAX_QUEUED_BYTES = 4 * 1024 * 1024;
+    /**
+     * The server orders one call's speech by these numbers, so they only grow
+     * for the life of the process: a mic-off cancel(), a pause or an Activity
+     * rebuild must never hand out a number the current call already used. A
+     * new call needs no reset; the server skips numbers that never began there.
+     */
+    private static final AtomicInteger NEXT_SEQ = new AtomicInteger();
 
     private static final class QueuedUtterance {
         final int seq;
@@ -36,7 +44,6 @@ public final class VoiceBridge implements AutoCloseable, VoiceCapture.Listener {
     private final Object queueLock = new Object();
     private final ArrayDeque<QueuedUtterance> queue = new ArrayDeque<>();
     private int queuedBytes;
-    private int nextSeq;
     private int activeSeq;
     private boolean closed;
 
@@ -98,7 +105,6 @@ public final class VoiceBridge implements AutoCloseable, VoiceCapture.Listener {
         synchronized (queueLock) {
             queue.clear();
             queuedBytes = 0;
-            nextSeq = 0;
             activeSeq = 0;
         }
     }
@@ -160,7 +166,7 @@ public final class VoiceBridge implements AutoCloseable, VoiceCapture.Listener {
     public void onSpeechStart() {
         int seq;
         synchronized (queueLock) {
-            seq = ++nextSeq;
+            seq = NEXT_SEQ.incrementAndGet();
             activeSeq = seq;
         }
         try {
