@@ -32,19 +32,41 @@ if grep -Eq 'DeliveryLedger\.|[^a-zA-Z_]ack\(|ACK_API|getSharedPreferences\(' "$
 else
   pass "call path has no ledger, no ack and no persistence"
 fi
-grep -qF 'CallNotificationSupport.pollQuery()' "$SUPPORT" \
-  && pass "poll URL carries known_call" || fail "poll URL must carry known_call"
-if grep -qF '"&known_call=" + known' "$CALL"; then
-  pass "known_call comes from in-memory CallState"
+grep -qF 'CallNotificationSupport.pollQuery(call)' "$SUPPORT" \
+  && pass "poll URL carries known_call from the request's snapshot" || fail "poll URL must carry known_call from the request's snapshot"
+if grep -qF '"&known_call=" + known' "$CALL" && grep -qF 'call.known' "$CALL"; then
+  pass "known_call comes from the in-memory CallState snapshot"
 else
-  fail "known_call query missing"
+  fail "known_call query must come from the CallState snapshot"
 fi
-HANDLE=$(grep -n 'CallNotificationSupport.handleDelta(ctx, payload);' "$SUPPORT" | cut -d: -f1 | head -1)
-EARLY=$(grep -n 'optBoolean("has_message", false)' "$SUPPORT" | cut -d: -f1 | head -1)
-if [[ -n "$HANDLE" && -n "$EARLY" && "$HANDLE" -lt "$EARLY" ]]; then
-  pass "call delta is applied before (and independent of) the message"
+grep -qF 'CallState.apply(call, true, id)' "$CALL" \
+  && pass "call delta is applied against the request's snapshot (revision fence)" \
+  || fail "call delta must be applied through CallState.apply(snapshot, ...)"
+# Each poller snapshots before building the URL and hands that same snapshot to
+# its response; a snapshot read at handlePayload time would fence nothing.
+for client in "$NATIVE/PushService.java" "$NATIVE/NotificationPollWorker.java"; do
+  name="$(basename "$client")"
+  SNAP=$(grep -n 'CallState.Snapshot call = CallState.snapshot();' "$client" | cut -d: -f1 | head -1)
+  URLL=$(grep -n 'NotificationSupport.pollUrl(.*, call)' "$client" | cut -d: -f1 | head -1)
+  if [[ -n "$SNAP" && -n "$URLL" && "$SNAP" -lt "$URLL" ]] \
+      && grep -qF 'NotificationSupport.handlePayload(getApplicationContext(), payload, call);' "$client"; then
+    pass "$name: snapshot taken before the request and passed to its response"
+  else
+    fail "$name: must snapshot CallState before the request and pass it to handlePayload"
+  fi
+done
+if grep -n 'CallState.snapshot()' "$SUPPORT" "$CALL" >/dev/null; then
+  fail "the response path must not take its own snapshot"
 else
-  fail "call delta must be applied before the message early return"
+  pass "the response path never re-reads the snapshot"
+fi
+HANDLE=$(grep -n '^ *CallNotificationSupport.handleDelta(ctx, payload, call);$' "$SUPPORT" | cut -d: -f1 | head -1)
+EARLY=$(grep -n 'optBoolean("has_message", false)' "$SUPPORT" | cut -d: -f1 | head -1)
+if [[ -n "$HANDLE" && -n "$EARLY" && "$HANDLE" -lt "$EARLY" ]] \
+    && grep -qF 'public static void handleDelta(' "$CALL"; then
+  pass "call delta (void, possibly stale) is applied before and independent of the message"
+else
+  fail "call delta must be a void statement before the message early return"
 fi
 grep -qF 'ack(ctx, id);' "$SUPPORT" && pass "message ack path unchanged" || fail "message ack path changed"
 grep -qF 'CallNotificationSupport.EXTRA_OPEN_CALL' "$MAIN" \

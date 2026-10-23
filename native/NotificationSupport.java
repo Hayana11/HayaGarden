@@ -136,19 +136,21 @@ public final class NotificationSupport {
 
     /**
      * Ack-protocol poll URL. No cursor: every delivery is confirmed by an explicit per-id ack.
-     * known_call is the incoming call this process shows (state, never an ack; see CallState).
+     * known_call comes from the CallState snapshot taken for this request (state, never an ack).
      */
-    public static String pollUrl(Context ctx, int waitSeconds) {
-        return API + "?protocol=ack&wait=" + waitSeconds + CallNotificationSupport.pollQuery();
+    public static String pollUrl(Context ctx, int waitSeconds, CallState.Snapshot call) {
+        return API + "?protocol=ack&wait=" + waitSeconds + CallNotificationSupport.pollQuery(call);
     }
 
     /**
      * Show a pending-notification payload at most once per id on this device,
      * then acknowledge it. Shared by NotificationPollWorker and PushService.
+     * {@code call} is the CallState snapshot the request was sent with.
      */
-    public static Delivery handlePayload(Context ctx, JSONObject payload) {
-        // The call delta rides beside the message and never waits on it or its ack.
-        CallNotificationSupport.handleDelta(ctx, payload);
+    public static Delivery handlePayload(Context ctx, JSONObject payload, CallState.Snapshot call) {
+        // The call delta rides beside the message and never waits on it or its ack;
+        // a stale call delta is dropped, the message is still shown and acked.
+        CallNotificationSupport.handleDelta(ctx, payload, call);
         if (payload == null || !payload.optBoolean("has_message", false)) {
             return Delivery.NOTHING;
         }

@@ -30,14 +30,18 @@ public final class CallNotificationSupport {
 
     private CallNotificationSupport() {}
 
-    /** The known_call query part for the poll URL ("" when no call is known). */
-    public static String pollQuery() {
-        String known = CallState.known();
+    /** The known_call query part for a poll sent with this snapshot ("" when no call is known). */
+    public static String pollQuery(CallState.Snapshot call) {
+        String known = call == null ? null : call.known;
         return known == null ? "" : "&known_call=" + known;
     }
 
-    /** Apply a poll response's call delta. Independent of its message, which is handled as before. */
-    public static void handleDelta(Context ctx, JSONObject payload) {
+    /**
+     * Apply a poll response's call delta, fenced by the snapshot its request was
+     * sent with. Independent of its message, which is handled as before even
+     * when the call delta is stale.
+     */
+    public static void handleDelta(Context ctx, JSONObject payload, CallState.Snapshot call) {
         if (payload == null || !payload.has("call")) {
             return;
         }
@@ -54,7 +58,7 @@ public final class CallNotificationSupport {
                 title = given;
             }
         }
-        switch (CallState.apply(true, id)) {
+        switch (CallState.apply(call, true, id)) {
             case SHOW:
                 show(ctx, title);
                 break;

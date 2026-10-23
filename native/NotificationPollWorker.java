@@ -25,8 +25,10 @@ public class NotificationPollWorker extends Worker {
         }
 
         HttpURLConnection connection = null;
+        // Bound to this request: its response may only apply a call delta against it.
+        CallState.Snapshot call = CallState.snapshot();
         try {
-            URL url = new URL(NotificationSupport.pollUrl(getApplicationContext(), 0));
+            URL url = new URL(NotificationSupport.pollUrl(getApplicationContext(), 0, call));
             connection = (HttpURLConnection) url.openConnection();
             if (!NotificationSupport.authorize(getApplicationContext(), connection)) {
                 // Not enrolled as a Health Bridge device: the ack protocol cannot authenticate.
@@ -52,7 +54,7 @@ public class NotificationPollWorker extends Worker {
             }
 
             JSONObject payload = new JSONObject(response.toString());
-            NotificationSupport.handlePayload(getApplicationContext(), payload);
+            NotificationSupport.handlePayload(getApplicationContext(), payload, call);
             return Result.success();
         } catch (Exception ignored) {
             return Result.retry();

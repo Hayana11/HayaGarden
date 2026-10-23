@@ -7,40 +7,65 @@ package xyz.lovestyle.home.canary;
  * shared by PushService and NotificationPollWorker. After a restart the phone
  * just hears about a still-ringing call again and updates the same
  * notification; nothing on disk can make it miss one.
+ *
+ * The two pollers' responses can arrive out of order, so every applied
+ * SHOW/CANCEL bumps a revision, and a response only applies its call delta if
+ * the revision is still the one snapshotted when its request was sent (the
+ * same snapshot supplies its known_call). A stale response cannot re-show a
+ * withdrawn call, and a revision that only ever grows has no ABA.
  */
 public final class CallState {
     public enum Action { NONE, SHOW, CANCEL }
 
     private static final Object LOCK = new Object();
     private static String known;
+    private static long revision;
+
+    /** What one poll request was sent with: its known_call and the revision it may apply against. */
+    public static final class Snapshot {
+        public final String known;
+        final long revision;
+
+        Snapshot(String known, long revision) {
+            this.known = known;
+            this.revision = revision;
+        }
+    }
 
     private CallState() {}
 
-    /** The call id to send as known_call, or null. */
-    public static String known() {
+    /** Take before sending a poll; pass the same snapshot to its response. */
+    public static Snapshot snapshot() {
         synchronized (LOCK) {
-            return known;
+            return new Snapshot(known, revision);
         }
     }
 
     /**
-     * Apply one response's call delta. {@code present} false: the response had
-     * no "call" (leave the notification alone). {@code id} null: "call": null
-     * (withdraw it). Otherwise show or update it. A malformed id changes nothing.
+     * Apply one response's call delta against the snapshot its request was sent
+     * with. {@code present} false: the response had no "call" (leave the
+     * notification alone). {@code id} null: "call": null (withdraw it).
+     * Otherwise show or update it. A malformed id, or a response whose request
+     * predates the last applied change, changes nothing.
      */
-    public static Action apply(boolean present, String id) {
-        if (!present) {
+    public static Action apply(Snapshot at, boolean present, String id) {
+        if (!present || at == null) {
             return Action.NONE;
         }
         synchronized (LOCK) {
+            if (at.revision != revision) {
+                return Action.NONE;  // stale: a newer response already reconciled the call
+            }
             if (id == null) {
                 known = null;
+                revision++;
                 return Action.CANCEL;  // idempotent: cancelling nothing is harmless
             }
             if (!valid(id)) {
                 return Action.NONE;
             }
             known = id;  // even if the notification cannot be shown: no hot re-announce loop
+            revision++;
             return Action.SHOW;
         }
     }
@@ -61,6 +86,7 @@ public final class CallState {
     static void resetForTest() {
         synchronized (LOCK) {
             known = null;
+            revision = 0;
         }
     }
 }

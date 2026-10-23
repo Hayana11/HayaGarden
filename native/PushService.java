@@ -91,9 +91,11 @@ public class PushService extends Service {
         while (running) {
             long started = SystemClock.elapsedRealtime();
             try {
-                JSONObject payload = fetchOnce();
+                // Bound to this request: its response may only apply a call delta against it.
+                CallState.Snapshot call = CallState.snapshot();
+                JSONObject payload = fetchOnce(call);
                 backoffS = 0;
-                NotificationSupport.handlePayload(getApplicationContext(), payload);
+                NotificationSupport.handlePayload(getApplicationContext(), payload, call);
                 long elapsed = SystemClock.elapsedRealtime() - started;
                 if (elapsed < MIN_CYCLE_MS) {
                     Thread.sleep(MIN_CYCLE_MS - elapsed);
@@ -111,10 +113,10 @@ public class PushService extends Service {
         }
     }
 
-    private JSONObject fetchOnce() throws Exception {
+    private JSONObject fetchOnce(CallState.Snapshot call) throws Exception {
         HttpURLConnection connection = null;
         try {
-            URL url = new URL(NotificationSupport.pollUrl(this, WAIT_S));
+            URL url = new URL(NotificationSupport.pollUrl(this, WAIT_S, call));
             connection = (HttpURLConnection) url.openConnection();
             if (!NotificationSupport.authorize(getApplicationContext(), connection)) {
                 throw new IllegalStateException("device not enrolled");

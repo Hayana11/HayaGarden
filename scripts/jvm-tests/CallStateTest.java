@@ -15,6 +15,11 @@ public final class CallStateTest {
     public static void main(String[] args) throws Exception {
         triState();
         malformedIdChangesNothing();
+        staleResponseCannotReshowWithdrawnCall();
+        staleExpectedNullHasNoAba();
+        staleShowCannotOverrideNewerCall();
+        withdrawalAdvancesTheFence();
+        nullSnapshotChangesNothing();
         bothPollersShareOneKnownCall();
         if (failures > 0) {
             System.exit(1);
@@ -22,45 +27,126 @@ public final class CallStateTest {
         System.out.println("CallState JVM tests passed");
     }
 
+    static String known() {
+        return CallState.snapshot().known;
+    }
+
+    /** Sequential polls, each sent with a fresh snapshot. */
+    static CallState.Action poll(boolean present, String id) {
+        return CallState.apply(CallState.snapshot(), present, id);
+    }
+
     static void triState() {
         CallState.resetForTest();
-        check(CallState.apply(false, null) == CallState.Action.NONE && CallState.known() == null,
+        check(poll(false, null) == CallState.Action.NONE && known() == null,
                 "call omitted: nothing changes");
-        check(CallState.apply(true, "abc123") == CallState.Action.SHOW && "abc123".equals(CallState.known()),
+        check(poll(true, "abc123") == CallState.Action.SHOW && "abc123".equals(known()),
                 "call object: show it and remember it as known_call");
-        check(CallState.apply(false, null) == CallState.Action.NONE && "abc123".equals(CallState.known()),
+        check(poll(false, null) == CallState.Action.NONE && "abc123".equals(known()),
                 "call omitted again: the notification is left alone");
-        check(CallState.apply(true, "def456") == CallState.Action.SHOW && "def456".equals(CallState.known()),
+        check(poll(true, "def456") == CallState.Action.SHOW && "def456".equals(known()),
                 "a different call replaces the known one (same fixed notification)");
-        check(CallState.apply(true, null) == CallState.Action.CANCEL && CallState.known() == null,
+        check(poll(true, null) == CallState.Action.CANCEL && known() == null,
                 "call null: withdraw it and forget it");
-        check(CallState.apply(true, null) == CallState.Action.CANCEL,
+        check(poll(true, null) == CallState.Action.CANCEL,
                 "a repeated withdrawal is a harmless cancel");
     }
 
     static void malformedIdChangesNothing() {
         CallState.resetForTest();
-        CallState.apply(true, "abc123");
+        poll(true, "abc123");
         for (String bad : new String[] {"", "x'; --", "a/b", "0123456789012345678901234567890123456789012345678901234567890123456789"}) {
-            check(CallState.apply(true, bad) == CallState.Action.NONE && "abc123".equals(CallState.known()),
-                    "malformed id ignored: " + (bad.length() > 12 ? bad.substring(0, 12) + "…" : bad));
+            CallState.Snapshot before = CallState.snapshot();
+            check(CallState.apply(before, true, bad) == CallState.Action.NONE && "abc123".equals(known())
+                            && CallState.apply(before, true, "abc123") == CallState.Action.SHOW,
+                    "malformed id ignored without bumping the revision: "
+                            + (bad.length() > 12 ? bad.substring(0, 12) + "…" : bad));
         }
     }
 
-    /** PushService and NotificationPollWorker apply deltas concurrently; the state stays one value. */
+    /**
+     * The reviewed race: both pollers send at rev0/known=null, response 1 shows
+     * A, a newer request withdraws it, then the delayed response 2 (rev0, A)
+     * arrives and must change nothing.
+     */
+    static void staleResponseCannotReshowWithdrawnCall() {
+        CallState.resetForTest();
+        CallState.Snapshot push = CallState.snapshot();
+        CallState.Snapshot worker = CallState.snapshot();
+        check(push.known == null && worker.known == null, "both requests go out with known_call omitted");
+        check(CallState.apply(push, true, "A1") == CallState.Action.SHOW && "A1".equals(known()),
+                "response 1 shows A (rev1)");
+        CallState.Snapshot next = CallState.snapshot();
+        check("A1".equals(next.known), "the next request sends known_call=A");
+        check(CallState.apply(next, true, null) == CallState.Action.CANCEL && known() == null,
+                "its call: null withdraws A (rev2)");
+        check(CallState.apply(worker, true, "A1") == CallState.Action.NONE && known() == null,
+                "delayed response 2 (rev0, A) is stale: NONE, known stays null");
+        check(poll(false, null) == CallState.Action.NONE && known() == null,
+                "nothing later resurrects A");
+    }
+
+    /** null -> A -> null: a response sent at the first null must not pass just because known is null again. */
+    static void staleExpectedNullHasNoAba() {
+        CallState.resetForTest();
+        CallState.Snapshot old = CallState.snapshot();
+        poll(true, "A1");
+        poll(true, null);
+        check(known() == null, "known is null again");
+        check(CallState.apply(old, true, "A1") == CallState.Action.NONE && known() == null,
+                "old expected-null response is still stale (revision, not known, is the fence)");
+        check(CallState.apply(old, true, null) == CallState.Action.NONE,
+                "an old withdrawal is stale too");
+    }
+
+    /** A stale SHOW of an old call cannot replace the newer ringing one. */
+    static void staleShowCannotOverrideNewerCall() {
+        CallState.resetForTest();
+        CallState.Snapshot old = CallState.snapshot();
+        poll(true, "B2");
+        check(CallState.apply(old, true, "A1") == CallState.Action.NONE && "B2".equals(known()),
+                "stale SHOW A leaves B shown");
+    }
+
+    /** A withdrawal is a change too: a request sent while A was shown is stale after it. */
+    static void withdrawalAdvancesTheFence() {
+        CallState.resetForTest();
+        poll(true, "A1");
+        CallState.Snapshot whileShown = CallState.snapshot();
+        poll(true, null);
+        check(CallState.apply(whileShown, true, "B2") == CallState.Action.NONE && known() == null,
+                "a response sent before the withdrawal cannot show anything after it");
+    }
+
+    static void nullSnapshotChangesNothing() {
+        CallState.resetForTest();
+        check(CallState.apply(null, true, "A1") == CallState.Action.NONE && known() == null,
+                "a response without a request snapshot applies nothing");
+    }
+
+    /**
+     * PushService and NotificationPollWorker send concurrently from the same
+     * snapshot and both get the same call: exactly one applies, the other is
+     * stale (the call is already shown), and the state stays one value.
+     */
     static void bothPollersShareOneKnownCall() throws Exception {
         for (int round = 0; round < 50; round++) {
             CallState.resetForTest();
             CyclicBarrier start = new CyclicBarrier(2);
             AtomicInteger shows = new AtomicInteger();
+            AtomicInteger stale = new AtomicInteger();
             Runnable poller = () -> {
+                CallState.Snapshot at = CallState.snapshot();
                 try {
                     start.await();
                 } catch (Exception e) {
                     return;
                 }
-                if (CallState.apply(true, "abc123") == CallState.Action.SHOW) {
+                CallState.Action action = CallState.apply(at, true, "abc123");
+                if (action == CallState.Action.SHOW) {
                     shows.incrementAndGet();
+                } else if (action == CallState.Action.NONE) {
+                    stale.incrementAndGet();
                 }
             };
             Thread push = new Thread(poller);
@@ -69,11 +155,12 @@ public final class CallStateTest {
             worker.start();
             push.join();
             worker.join();
-            if (!"abc123".equals(CallState.known()) || shows.get() != 2) {
-                check(false, "round " + round + ": known=" + CallState.known() + " shows=" + shows.get());
+            if (!"abc123".equals(known()) || shows.get() != 1 || stale.get() != 1) {
+                check(false, "round " + round + ": known=" + known() + " shows=" + shows.get()
+                        + " stale=" + stale.get());
                 return;
             }
         }
-        check(true, "two pollers, 50 rounds: one known call, both updates land on the fixed notification");
+        check(true, "two pollers, 50 rounds: one known call, exactly one applies, the other is fenced");
     }
 }
