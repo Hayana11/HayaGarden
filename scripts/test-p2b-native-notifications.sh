@@ -75,10 +75,15 @@ if grep -qiE 'command|ScreenCapture|screenshot|Pocket|GPS|location|AppTracker' "
 else
   pass "worker is display-only"
 fi
-if grep -R -E 'ForegroundService|startForegroundService|startService\(|BootReceiver' "$NATIVE"/*.java; then
+# P2D (owner-approved 2026-10-23) owns the push service, its starter and boot
+# receiver; they carry their own contract in test-p2d-push.sh. Everything else
+# stays service- and receiver-free.
+P2D_OWNED='/(PushService|PushSupport|PushBootReceiver)\.java$'
+if ls "$NATIVE"/*.java | grep -vE "$P2D_OWNED" \
+    | xargs grep -E 'ForegroundService|startForegroundService|startService\(|BootReceiver'; then
   fail "custom native source contains forbidden service or receiver"
 else
-  pass "no custom foreground service or receiver"
+  pass "no foreground service or receiver outside P2D"
 fi
 
 for token in 'CHANNEL_ID = "fyodor_msg"' 'CHANNEL_NAME = "费奥多尔的消息"' 'WORK_NAME = "poll_fyodor"' 'CHAT_URL = "https://love-style.xyz/dash/chat"' 'PeriodicWorkRequest' '15, TimeUnit.MINUTES' 'NetworkType.CONNECTED' 'ExistingPeriodicWorkPolicy.KEEP'; do
@@ -97,7 +102,8 @@ if [[ -f "$MANIFEST" ]]; then
   for need in INTERNET PACKAGE_USAGE_STATS REQUEST_IGNORE_BATTERY_OPTIMIZATIONS POST_NOTIFICATIONS; do
     grep -q "android.permission.$need" "$MANIFEST" && pass "manifest has $need" || fail "manifest missing $need"
   done
-  if grep -Eq 'android.permission.(FOREGROUND_SERVICE|ACCESS_.*LOCATION|RECEIVE_BOOT_COMPLETED|CAMERA|RECORD_AUDIO)' "$MANIFEST"; then
+  # FOREGROUND_SERVICE, FOREGROUND_SERVICE_REMOTE_MESSAGING and RECEIVE_BOOT_COMPLETED belong to P2D.
+  if grep -Eq 'android.permission.(FOREGROUND_SERVICE_(DATA_SYNC|LOCATION|MEDIA_PROJECTION|CAMERA|MICROPHONE|PHONE_CALL)|ACCESS_.*LOCATION|CAMERA|RECORD_AUDIO)"' "$MANIFEST"; then
     fail "manifest contains forbidden permission"
   else
     pass "manifest has no forbidden permission"

@@ -3,9 +3,11 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-NATIVE="$ROOT/native-p2d"
+NATIVE="$ROOT/native"
 SERVICE="$NATIVE/PushService.java"
 RECEIVER="$NATIVE/PushBootReceiver.java"
+STARTER="$NATIVE/PushSupport.java"
+SUPPORT="$NATIVE/NotificationSupport.java"
 ANDROID_ROOT="${1:-$ROOT/android}"
 MANIFEST="$ANDROID_ROOT/app/src/main/AndroidManifest.xml"
 GEN_JAVA="$ANDROID_ROOT/app/src/main/java/xyz/lovestyle/home/canary"
@@ -14,7 +16,7 @@ FAIL=0
 pass() { echo "PASS: $*"; }
 fail() { echo "FAIL: $*" >&2; FAIL=1; }
 
-for file in "$SERVICE" "$RECEIVER"; do
+for file in "$SERVICE" "$RECEIVER" "$STARTER"; do
   [[ -f "$file" ]] && pass "present $file" || fail "missing $file"
 done
 
@@ -37,6 +39,16 @@ fi
 grep -qF 'canPostNotifications' "$RECEIVER" && grep -qF 'ensurePollingScheduled' "$RECEIVER" \
   && pass "boot receiver is gated on notification permission" || fail "boot receiver must gate on canPostNotifications"
 
+grep -qF 'canPostNotifications' "$STARTER" && grep -qF 'startForegroundService' "$STARTER" \
+  && pass "service start is gated on notification permission" || fail "PushSupport must gate the start on canPostNotifications"
+grep -qF 'PushSupport.ensureRunning(ctx);' "$SUPPORT" \
+  && pass "NotificationSupport starts the push service" || fail "NotificationSupport.ensurePollingScheduled must call PushSupport.ensureRunning"
+if grep -lE 'startForegroundService|startService\(' "$NATIVE"/*.java | grep -vqx "$STARTER"; then
+  fail "only PushSupport may start a service"
+else
+  pass "PushSupport is the only service starter"
+fi
+
 if [[ -f "$MANIFEST" ]]; then
   for need in FOREGROUND_SERVICE FOREGROUND_SERVICE_REMOTE_MESSAGING RECEIVE_BOOT_COMPLETED; do
     grep -qF "android.permission.$need\"" "$MANIFEST" && pass "manifest has $need" || fail "manifest missing $need"
@@ -50,7 +62,7 @@ if [[ -f "$MANIFEST" ]]; then
     && pass "PushService declared once" || fail "PushService must be declared exactly once"
   [[ "$(grep -Fc 'android:name=".PushBootReceiver"' "$MANIFEST")" -eq 1 ]] \
     && pass "PushBootReceiver declared once" || fail "PushBootReceiver must be declared exactly once"
-  for name in PushService PushBootReceiver; do
+  for name in PushService PushBootReceiver PushSupport; do
     [[ -f "$GEN_JAVA/$name.java" ]] && pass "generated $name.java exists" || fail "generated $name.java missing"
   done
 fi

@@ -1,16 +1,15 @@
 #!/usr/bin/env bash
 # Phase 2D: held-open push long poll in a remoteMessaging foreground service,
 # restarted after boot. Composes on top of the full P2C.1 + Health chain.
-# NOT wired into CI yet: P2B's contract still forbids foreground services and
-# boot receivers until the owner lifts that lock for this phase.
+# Owner lifted the Phase-0 service/boot-receiver lock for this phase on 2026-10-23.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-NATIVE="$ROOT/native-p2d"
+NATIVE="$ROOT/native"
 DEST_DIR="$ROOT/android/app/src/main/java/xyz/lovestyle/home/canary"
 MANIFEST="$ROOT/android/app/src/main/AndroidManifest.xml"
 
-for required in "$NATIVE/PushService.java" "$NATIVE/PushBootReceiver.java" "$MANIFEST"; do
+for required in "$NATIVE/PushService.java" "$NATIVE/PushBootReceiver.java" "$NATIVE/PushSupport.java" "$MANIFEST"; do
   if [[ ! -f "$required" ]]; then
     echo "missing $required" >&2
     exit 1
@@ -20,6 +19,7 @@ done
 mkdir -p "$DEST_DIR"
 cp "$NATIVE/PushService.java" "$DEST_DIR/PushService.java"
 cp "$NATIVE/PushBootReceiver.java" "$DEST_DIR/PushBootReceiver.java"
+cp "$NATIVE/PushSupport.java" "$DEST_DIR/PushSupport.java"
 
 ensure_permission() {
   if ! grep -Fq "android.permission.$1\"" "$MANIFEST"; then

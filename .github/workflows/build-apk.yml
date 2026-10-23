@@ -72,6 +72,9 @@ jobs:
       - name: Apply Health Bridge R1
         run: bash scripts/apply-health-r1.sh
 
+      - name: Apply P2D push long poll
+        run: bash scripts/apply-p2d-push.sh
+
       - name: Health Bridge R1 contract test
         run: bash scripts/test-health-r1.sh
 
@@ -89,6 +92,9 @@ jobs:
 
       - name: Top safe inset and edge-to-edge contract test
         run: bash scripts/test-top-safe-inset-edge-to-edge.sh
+
+      - name: P2D push contract test
+        run: bash scripts/test-p2d-push.sh
 
       - name: Generate app icons
         run: |

@@ -80,6 +80,8 @@ public final class NotificationSupport {
         WorkManager.getInstance(ctx.getApplicationContext())
                 .enqueueUniquePeriodicWork(
                         WORK_NAME, ExistingPeriodicWorkPolicy.KEEP, work);
+        // P2D (owner-approved 2026-10-23): seconds-fast delivery on top of the worker.
+        PushSupport.ensureRunning(ctx);
     }
 
     public static boolean showNotification(

@@ -8,6 +8,13 @@ six explicit JS methods only). Injected via `scripts/apply-p2a-nativebridge-lite
 Do **not** restore Phase-0-forbidden native capabilities (services, trackers,
 capture, Pocket, GPS, notification workers). Do **not** merge/deploy from agent
 automation unless the user explicitly requests it for a later phase.
+
+Lifted by the owner for later phases so far:
+- P2B (notification worker): 15-minute WorkManager poll.
+- P2D (2026-10-23): `PushService` remoteMessaging foreground service holding a
+  `pending_notification?wait=25` long poll, started only through
+  `PushSupport.ensureRunning`, plus `PushBootReceiver`. Contract:
+  `scripts/test-p2d-push.sh`. Trackers, capture, Pocket and GPS stay forbidden.
 Do **not** modify Draft PR #14 or the production appId `xyz.lovestyle.home`.
 
 ## Build
