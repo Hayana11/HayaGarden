@@ -43,6 +43,10 @@ import kotlinx.coroutines.launch
  * VoIP call live under Core-Telecom in a phoneCall foreground service, keep
  * recording with the screen off, and route through Telecom endpoints?
  *
+ * Only the phoneCall type is used (owner-approved); the microphone FGS type is
+ * not. Whether the recorder keeps real data with the screen off under
+ * phoneCall alone is one of the questions (see zeroReads in the log).
+ *
  * It does not touch the real call loop (CallScreen, VoiceBridge,
  * CallAudioBridge). Everything it learns goes to logcat (tag ElpisTelecomSpike)
  * and to the in-memory log TelecomSpikeActivity shows.
@@ -75,8 +79,7 @@ class TelecomSpikeService : Service() {
         }
         createChannel()
         answered = !incoming
-        // phoneCall first: the microphone type is only added once the call is live.
-        if (!promote(notification(incoming = incoming), withMicrophone = false)) {
+        if (!promote(notification(incoming = incoming))) {
             stopSelf()
             return
         }
@@ -152,7 +155,7 @@ class TelecomSpikeService : Service() {
         if (answered && startedAt > 0) return
         answered = true
         startedAt = SystemClock.elapsedRealtime()
-        promote(notification(incoming = false), withMicrophone = true)
+        promote(notification(incoming = false))
         startRecording()
     }
 
@@ -165,20 +168,18 @@ class TelecomSpikeService : Service() {
         log("requestEndpointChange ${describe(target)} -> ${requestEndpointChange(target)}")
     }
 
-    /** startForeground with phoneCall (and microphone once live); logs a refusal instead of crashing. */
-    private fun promote(notification: Notification, withMicrophone: Boolean): Boolean {
+    /** startForeground as a phoneCall service; logs a refusal instead of crashing. */
+    private fun promote(notification: Notification): Boolean {
         return try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                var types = ServiceInfo.FOREGROUND_SERVICE_TYPE_PHONE_CALL
-                if (withMicrophone) types = types or ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
-                startForeground(NOTIFICATION_ID, notification, types)
+                startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_PHONE_CALL)
             } else {
                 startForeground(NOTIFICATION_ID, notification)
             }
-            log("startForeground OK (phoneCall${if (withMicrophone) "|microphone" else ""})")
+            log("startForeground OK (phoneCall)")
             true
         } catch (e: Exception) {
-            log("startForeground FAILED (phoneCall${if (withMicrophone) "|microphone" else ""}): $e")
+            log("startForeground FAILED (phoneCall): $e")
             false
         }
     }

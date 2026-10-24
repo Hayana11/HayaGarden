@@ -58,18 +58,18 @@ ensure_permission() {
   fi
 }
 # Self-managed VoIP: MANAGE_OWN_CALLS satisfies the phoneCall FGS type
-# requirement without becoming the default dialer.
+# requirement without becoming the default dialer (owner-approved 2026-10-24).
+# The microphone FGS type is deliberately not declared.
 ensure_permission MANAGE_OWN_CALLS
 ensure_permission FOREGROUND_SERVICE
 ensure_permission FOREGROUND_SERVICE_PHONE_CALL
-ensure_permission FOREGROUND_SERVICE_MICROPHONE
 ensure_permission USE_FULL_SCREEN_INTENT
 
 if ! grep -Fq 'android:name=".TelecomSpikeService"' "$MANIFEST"; then
   sed -i 's|</application>|        <service\
             android:name=".TelecomSpikeService"\
             android:exported="false"\
-            android:foregroundServiceType="phoneCall\|microphone" />\
+            android:foregroundServiceType="phoneCall" />\
         <activity\
             android:name=".TelecomSpikeActivity"\
             android:exported="true"\

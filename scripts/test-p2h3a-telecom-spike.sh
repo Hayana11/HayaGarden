@@ -33,6 +33,11 @@ has 'manager.registerAppWithTelecom(CallsManager.CAPABILITY_BASELINE)' "$SERVICE
 has 'manager.addCall(' "$SERVICE" && pass "adds the call through CallsManager" || fail "addCall missing"
 has 'ServiceInfo.FOREGROUND_SERVICE_TYPE_PHONE_CALL' "$SERVICE" \
   && pass "phoneCall foreground service type" || fail "phoneCall FGS type missing"
+if grep -Fq 'FOREGROUND_SERVICE_TYPE_MICROPHONE' "$SERVICE"; then
+  fail "probe uses the unapproved microphone FGS type"
+else
+  pass "probe uses phoneCall only"
+fi
 has 'requestEndpointChange(target)' "$SERVICE" && has 'availableEndpoints.collect' "$SERVICE" \
   && has 'currentCallEndpoint.collect' "$SERVICE" \
   && pass "routes through Telecom endpoints and logs them" || fail "endpoint routing/logging missing"
@@ -48,7 +53,7 @@ if [[ -n "$ANDROID_ROOT" ]]; then
   MANIFEST="$ANDROID_ROOT/app/src/main/AndroidManifest.xml"
   GRADLE="$ANDROID_ROOT/app/build.gradle"
   GEN_JAVA="$ANDROID_ROOT/app/src/main/java/xyz/lovestyle/home/canary"
-  for permission in MANAGE_OWN_CALLS FOREGROUND_SERVICE_PHONE_CALL FOREGROUND_SERVICE_MICROPHONE USE_FULL_SCREEN_INTENT; do
+  for permission in MANAGE_OWN_CALLS FOREGROUND_SERVICE_PHONE_CALL USE_FULL_SCREEN_INTENT; do
     [[ "$(grep -Fc "android.permission.$permission\"" "$MANIFEST")" -eq 1 ]] \
       && pass "$permission declared once" || fail "$permission declaration count is not one"
   done
@@ -57,8 +62,13 @@ if [[ -n "$ANDROID_ROOT" ]]; then
   else
     pass "no SIM telephony permissions"
   fi
-  grep -Fq 'android:foregroundServiceType="phoneCall|microphone"' "$MANIFEST" \
-    && pass "service declares phoneCall|microphone" || fail "service FGS types missing"
+  grep -Fq 'android:foregroundServiceType="phoneCall"' "$MANIFEST" \
+    && pass "service declares phoneCall only" || fail "service FGS type is not phoneCall"
+  if grep -Fq 'android.permission.FOREGROUND_SERVICE_MICROPHONE"' "$MANIFEST"; then
+    fail "microphone FGS type is not approved"
+  else
+    pass "no microphone FGS permission"
+  fi
   [[ "$(grep -Ec 'androidx\.core:core-telecom:' "$GRADLE")" -eq 1 ]] && grep -Fq 'androidx.core:core-telecom:1.0.1' "$GRADLE" \
     && pass "core-telecom 1.0.1 appears once" || fail "core-telecom dependency contract failed"
   for source in TelecomSpikeService.kt TelecomSpikeActivity.kt; do
