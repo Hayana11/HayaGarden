@@ -131,6 +131,8 @@ if [[ -f "$MANIFEST" ]]; then
   # RECORD_AUDIO belongs to P2E (both owner-approved 2026-10-23).
   # FOREGROUND_SERVICE_PHONE_CALL belongs to P2H-3A (owner-approved 2026-10-24 decision
   # report: phoneCall FGS + MANAGE_OWN_CALLS; contract: test-p2h3a-telecom-spike.sh).
+  # BLUETOOTH_CONNECT is never declared here: core-telecom merges it in (owner-approved
+  # 2026-10-24); the merged APK is checked by test-merged-permissions.sh.
   if grep -Eq 'android.permission.(ACCESS_.*LOCATION|BLUETOOTH|READ_CALENDAR|WRITE_CALENDAR|BODY_SENSORS|BODY_SENSORS_BACKGROUND|FOREGROUND_SERVICE_(DATA_SYNC|LOCATION|MEDIA_PROJECTION|CAMERA|MICROPHONE|HEALTH)|CAMERA"|SYSTEM_ALERT_WINDOW|SCHEDULE_EXACT_ALARM|REQUEST_INSTALL_PACKAGES|WRITE_SETTINGS)' "$MANIFEST"; then
     fail "P2C.1 introduced a dangerous or special permission"
   else

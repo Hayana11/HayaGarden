@@ -212,6 +212,11 @@ class TelecomSpikeService : Service() {
     }
 
     private suspend fun CallControlScope.route(type: Int) {
+        if (type == CallEndpointCompat.TYPE_BLUETOOTH && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
+            checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED) {
+            log("Bluetooth skipped: Nearby devices not granted; the call stays on earpiece/speaker")
+            return
+        }
         val target = endpoints.firstOrNull { it.type == type }
         if (target == null) {
             log("no endpoint of type ${typeName(type)} in [${endpoints.joinToString { describe(it) }}]")

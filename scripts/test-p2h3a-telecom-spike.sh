@@ -75,6 +75,30 @@ has 'startForeground FAILED' "$SERVICE" && has 'addCall FAILED' "$SERVICE" && ha
   && pass "platform refusals are logged, not crashes" || fail "refusals not logged"
 has 'const val TAG = "ElpisTelecomSpike"' "$SERVICE" && pass "logcat tag ElpisTelecomSpike" || fail "log tag changed"
 
+# BLUETOOTH_CONNECT (merged in by core-telecom, owner-approved 2026-10-24): asked only when
+# a Bluetooth endpoint is wanted, never at startup; a denial leaves the call on earpiece/speaker.
+ACTIVITY="$NATIVE/TelecomSpikeActivity.kt"
+python3 - "$ACTIVITY" <<'PY' && pass "Nearby devices is requested only from the Bluetooth action" || fail "BLUETOOTH_CONNECT requested outside the Bluetooth action"
+import sys
+src = open(sys.argv[1]).read()
+assert src.count('requestPermissions(') == 1
+on_action = src[src.index('private fun onAction('):]
+on_action = on_action[:on_action.index('\n    }\n')]
+assert 'requestPermissions(arrayOf(Manifest.permission.BLUETOOTH_CONNECT)' in on_action
+assert 'action == TelecomSpikeService.ACTION_BLUETOOTH && needsNearbyDevices()' in on_action
+create = src[src.index('override fun onCreate('):]
+create = create[:create.index('\n    }\n')]
+assert 'requestPermissions' not in create
+PY
+has 'log("Nearby devices denied: staying on the current earpiece/speaker endpoint")' "$ACTIVITY" \
+  && has 'log("Bluetooth skipped: Nearby devices not granted; the call stays on earpiece/speaker")' "$SERVICE" \
+  && pass "a denial degrades to earpiece/speaker without ending the call" || fail "no graceful Bluetooth denial path"
+if grep -Ev '^[[:space:]]*(\*|/\*|//)' "$SERVICE" | grep -Fq 'requestPermissions'; then
+  fail "the service must not request permissions"
+else
+  pass "the service never requests permissions"
+fi
+
 if [[ -n "$ANDROID_ROOT" ]]; then
   MANIFEST="$ANDROID_ROOT/app/src/main/AndroidManifest.xml"
   GRADLE="$ANDROID_ROOT/app/build.gradle"

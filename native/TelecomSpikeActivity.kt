@@ -1,6 +1,9 @@
 package xyz.lovestyle.home.canary
 
+import android.Manifest
 import android.app.Activity
+import android.content.pm.PackageManager
+import android.os.Build
 import android.graphics.Typeface
 import android.os.Bundle
 import android.os.Handler
@@ -42,7 +45,7 @@ class TelecomSpikeActivity : Activity() {
         for ((label, action) in buttons) {
             root.addView(Button(this).apply {
                 text = label
-                setOnClickListener { TelecomSpikeService.send(this@TelecomSpikeActivity, action) }
+                setOnClickListener { onAction(action) }
             })
         }
         logView = TextView(this).apply {
@@ -56,6 +59,32 @@ class TelecomSpikeActivity : Activity() {
         TelecomSpikeService.log("probe screen opened")
     }
 
+    private fun onAction(action: String) {
+        if (action == TelecomSpikeService.ACTION_BLUETOOTH && needsNearbyDevices()) {
+            // Asked only here, when a Bluetooth endpoint is actually wanted; never at startup.
+            TelecomSpikeService.log("Bluetooth wanted: requesting Nearby devices (BLUETOOTH_CONNECT)")
+            requestPermissions(arrayOf(Manifest.permission.BLUETOOTH_CONNECT), REQUEST_NEARBY_DEVICES)
+            return
+        }
+        TelecomSpikeService.send(this, action)
+    }
+
+    private fun needsNearbyDevices(): Boolean =
+        Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
+            checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED
+
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode != REQUEST_NEARBY_DEVICES) return
+        if (grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+            TelecomSpikeService.log("Nearby devices granted")
+            TelecomSpikeService.send(this, TelecomSpikeService.ACTION_BLUETOOTH)
+        } else {
+            // The call goes on: the route simply stays on earpiece/speaker.
+            TelecomSpikeService.log("Nearby devices denied: staying on the current earpiece/speaker endpoint")
+        }
+    }
+
     override fun onResume() {
         super.onResume()
         main.post(refresh)
@@ -64,5 +93,9 @@ class TelecomSpikeActivity : Activity() {
     override fun onPause() {
         main.removeCallbacks(refresh)
         super.onPause()
+    }
+
+    private companion object {
+        const val REQUEST_NEARBY_DEVICES = 2010
     }
 }

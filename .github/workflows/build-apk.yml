@@ -143,6 +143,9 @@ jobs:
       - name: Validate P2F APK contents
         run: bash scripts/test-p2f-voice.sh android android/app/build/outputs/apk/debug/app-debug.apk
 
+      - name: Merged APK permission check
+        run: bash scripts/test-merged-permissions.sh android/app/build/outputs/apk/debug/app-debug.apk
+
       - name: Name APK artifact
         run: mv android/app/build/outputs/apk/debug/app-debug.apk android/app/build/outputs/apk/debug/Elpis-Canary-health-r1-${{ github.run_number }}.apk
 
