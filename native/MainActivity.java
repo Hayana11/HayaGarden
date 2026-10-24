@@ -260,6 +260,17 @@ public class MainActivity extends BridgeActivity {
     }
 
     private void handleNotificationIntent(Intent intent) {
+        if (intent != null && intent.getBooleanExtra(
+                CallNotificationSupport.EXTRA_OPEN_CALL, false)) {
+            intent.removeExtra(CallNotificationSupport.EXTRA_OPEN_CALL);
+            CallNotificationSupport.stopRinging(this);
+            Bridge callBridge = getBridge();
+            WebView callView = callBridge != null ? callBridge.getWebView() : null;
+            if (callView != null) {
+                callView.post(() -> callView.loadUrl(CallNotificationSupport.CALL_URL));
+            }
+            return;
+        }
         if (intent == null || !intent.getBooleanExtra(
                 NotificationSupport.EXTRA_OPEN_CHAT, false)) {
             return;

@@ -25,8 +25,8 @@ grep -qF 'FOREGROUND_SERVICE_TYPE_REMOTE_MESSAGING' "$SERVICE" \
 if grep -qE 'FOREGROUND_SERVICE_TYPE_(DATA_SYNC|LOCATION|MEDIA_PROJECTION|MICROPHONE|CAMERA)' "$SERVICE"; then
   fail "service must not use a time-limited or sensitive foreground type"
 fi
-grep -qF 'NotificationSupport.pollUrl(this, WAIT_S)' "$SERVICE" \
-  && pass "long poll uses the ack-protocol URL with wait" || fail "long poll must use NotificationSupport.pollUrl(this, WAIT_S)"
+grep -qF 'NotificationSupport.pollUrl(this, WAIT_S, call)' "$SERVICE" \
+  && pass "long poll uses the ack-protocol URL with wait" || fail "long poll must use NotificationSupport.pollUrl(this, WAIT_S, call)"
 grep -qF 'protocol=ack&wait=' "$SUPPORT" \
   && pass "poll URL speaks the ack protocol with wait" || fail "pollUrl must request protocol=ack with wait"
 if grep -qE 'since=|readCursor|wakeNumber' "$SUPPORT" "$NATIVE/DeliveryLedger.java" "$SERVICE" "$NATIVE/NotificationPollWorker.java"; then
