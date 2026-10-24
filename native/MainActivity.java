@@ -1,12 +1,23 @@
 package xyz.lovestyle.home.canary;
 
 import android.Manifest;
+import android.graphics.Color;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.os.Build;
 import android.os.Bundle;
+import android.view.View;
+import android.view.ViewGroup;
+import android.view.Window;
+import android.view.WindowManager;
 import android.webkit.WebView;
+import androidx.core.graphics.Insets;
+import androidx.core.view.ViewCompat;
+import androidx.core.view.WindowInsetsCompat;
 import androidx.activity.OnBackPressedCallback;
+import androidx.activity.result.ActivityResultLauncher;
+import androidx.health.connect.client.PermissionController;
+import java.util.Set;
 import com.getcapacitor.Bridge;
 import com.getcapacitor.BridgeActivity;
 
@@ -14,17 +25,34 @@ public class MainActivity extends BridgeActivity {
     private static final int REQUEST_HMS_ACTIVITY_PERMISSION = 19042;
     private PhysicalStateStore physicalStateStore;
     private HmsActivityStore hmsActivityStore;
+    private HealthStateStore healthStateStore;
+    private ActivityResultLauncher<Set<String>> healthPermissionLauncher;
+    private SpeechBridge speechBridge;
+    private VoiceBridge voiceBridge;
+    private CallAudioBridge callAudioBridge;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
+        healthPermissionLauncher = registerForActivityResult(
+                PermissionController.createRequestPermissionResultContract(),
+                granted -> {
+                    if (healthStateStore != null) {
+                        healthStateStore.getHealthStatus();
+                    }
+                }
+        );
+        configureTopStatusBar();
+
         physicalStateStore = new PhysicalStateStore(getApplicationContext());
         hmsActivityStore = new HmsActivityStore(getApplicationContext());
+        healthStateStore = new HealthStateStore(getApplicationContext());
 
         Bridge bridge = getBridge();
         WebView webView = bridge != null ? bridge.getWebView() : null;
         if (webView != null) {
+            configureImeResize(webView);
             webView.addJavascriptInterface(
                 new NativeBridge(getApplicationContext()),
                 "ElpisNative"
@@ -41,8 +69,23 @@ public class MainActivity extends BridgeActivity {
                 new HmsActivityBridge(hmsActivityStore),
                 "ElpisActivity"
             );
+            webView.addJavascriptInterface(
+                new HealthBridge(this, healthStateStore),
+                "ElpisHealth"
+            );
+            webView.addJavascriptInterface(
+                new InsetsBridge(getApplicationContext(), webView),
+                "ElpisInsets"
+            );
+            speechBridge = new SpeechBridge(this, webView);
+            webView.addJavascriptInterface(speechBridge, "ElpisSpeech");
+            voiceBridge = new VoiceBridge(this, webView);
+            webView.addJavascriptInterface(voiceBridge, "ElpisVoice");
+            callAudioBridge = new CallAudioBridge(this, webView);
+            webView.addJavascriptInterface(callAudioBridge, "ElpisCallAudio");
         }
 
+        HealthSupport.ensureScheduled(this);
         NotificationSupport.createChannel(this);
         if (NotificationSupport.canPostNotifications(this)) {
             NotificationSupport.ensurePollingScheduled(this);
@@ -69,6 +112,52 @@ public class MainActivity extends BridgeActivity {
         );
     }
 
+    /**
+     * Shrink the native container that owns the WebView when the IME opens.
+     * This changes the WebView viewport so fixed-position frontend elements
+     * remain above the keyboard without a frontend keyboard-height workaround.
+     * Navigation-bar safe area remains owned by the WebView/frontend.
+     */
+    private void configureImeResize(WebView webView) {
+        final ViewGroup imeContainer = webView.getParent() instanceof ViewGroup
+                ? (ViewGroup) webView.getParent()
+                : webView;
+        final int baseBottomPadding = imeContainer.getPaddingBottom();
+
+        ViewCompat.setOnApplyWindowInsetsListener(imeContainer, (view, insets) -> {
+            Insets imeInsets = insets.getInsets(WindowInsetsCompat.Type.ime());
+            int imeBottom = insets.isVisible(WindowInsetsCompat.Type.ime())
+                    ? imeInsets.bottom
+                    : 0;
+            int targetBottomPadding = baseBottomPadding + imeBottom;
+
+            if (view.getPaddingBottom() != targetBottomPadding) {
+                view.setPadding(
+                        view.getPaddingLeft(),
+                        view.getPaddingTop(),
+                        view.getPaddingRight(),
+                        targetBottomPadding
+                );
+            }
+            return insets;
+        });
+        ViewCompat.requestApplyInsets(imeContainer);
+    }
+    private void configureTopStatusBar() {
+        Window window = getWindow();
+        window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
+        window.addFlags(WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS);
+        window.setStatusBarColor(Color.TRANSPARENT);
+
+        int flags = window.getDecorView().getSystemUiVisibility()
+                | View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+                | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            flags |= View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR;
+        }
+        window.getDecorView().setSystemUiVisibility(flags);
+    }
+
     @Override
     public void onResume() {
         super.onResume();
@@ -78,6 +167,12 @@ public class MainActivity extends BridgeActivity {
         if (hmsActivityStore != null) {
             hmsActivityStore.startIfPermitted();
         }
+        if (speechBridge != null) {
+            speechBridge.resumed();
+        }
+        if (voiceBridge != null) {
+            voiceBridge.resumed();
+        }
     }
 
     @Override
@@ -85,12 +180,24 @@ public class MainActivity extends BridgeActivity {
         if (physicalStateStore != null) {
             physicalStateStore.stop();
         }
+        if (speechBridge != null) {
+            speechBridge.release();
+        }
+        if (voiceBridge != null) {
+            voiceBridge.release();
+        }
         // HMS updates intentionally remain registered while backgrounded.
         super.onPause();
     }
 
     @Override
     public void onDestroy() {
+        if (voiceBridge != null) {
+            voiceBridge.close();
+        }
+        if (callAudioBridge != null) {
+            callAudioBridge.close();
+        }
         super.onDestroy();
     }
 
@@ -105,6 +212,12 @@ public class MainActivity extends BridgeActivity {
     public void onRequestPermissionsResult(
             int requestCode, String[] permissions, int[] grantResults) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        if (speechBridge != null) {
+            speechBridge.onPermissionResult(requestCode, grantResults);
+        }
+        if (voiceBridge != null) {
+            voiceBridge.onPermissionResult(requestCode, grantResults);
+        }
         if (requestCode == REQUEST_HMS_ACTIVITY_PERMISSION
                 && hmsActivityStore != null
                 && grantResults.length > 0
@@ -117,6 +230,19 @@ public class MainActivity extends BridgeActivity {
                     == PackageManager.PERMISSION_GRANTED) {
             NotificationSupport.ensurePollingScheduled(this);
         }
+    }
+
+    public void requestHealthConnectPermissions() {
+        if (healthPermissionLauncher == null) return;
+
+        Set<String> permissions =
+                HealthConnectReader.permissionsForRequest(getApplicationContext());
+        runOnUiThread(() -> {
+            try {
+                healthPermissionLauncher.launch(permissions);
+            } catch (Exception ignored) {
+            }
+        });
     }
 
     private void requestHmsActivityPermissionIfNeeded() {
@@ -140,6 +266,17 @@ public class MainActivity extends BridgeActivity {
     }
 
     private void handleNotificationIntent(Intent intent) {
+        if (intent != null && intent.getBooleanExtra(
+                CallNotificationSupport.EXTRA_OPEN_CALL, false)) {
+            intent.removeExtra(CallNotificationSupport.EXTRA_OPEN_CALL);
+            CallNotificationSupport.stopRinging(this);
+            Bridge callBridge = getBridge();
+            WebView callView = callBridge != null ? callBridge.getWebView() : null;
+            if (callView != null) {
+                callView.post(() -> callView.loadUrl(CallNotificationSupport.CALL_URL));
+            }
+            return;
+        }
         if (intent == null || !intent.getBooleanExtra(
                 NotificationSupport.EXTRA_OPEN_CHAT, false)) {
             return;

@@ -6,6 +6,7 @@ import android.app.NotificationManager;
 import android.app.PendingIntent;
 import android.content.Context;
 import android.content.Intent;
+import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.os.Build;
 import androidx.core.app.NotificationCompat;
@@ -15,7 +16,14 @@ import androidx.work.ExistingPeriodicWorkPolicy;
 import androidx.work.NetworkType;
 import androidx.work.PeriodicWorkRequest;
 import androidx.work.WorkManager;
+import java.io.OutputStream;
+import java.net.HttpURLConnection;
+import java.net.URL;
+import java.nio.charset.StandardCharsets;
+import java.util.Arrays;
 import java.util.concurrent.TimeUnit;
+import org.json.JSONArray;
+import org.json.JSONObject;
 
 /** The sole authority for P2B notification capability, display, and polling. */
 public final class NotificationSupport {
@@ -28,6 +36,15 @@ public final class NotificationSupport {
     public static final String EXTRA_OPEN_CHAT = "elpis.notification.open_chat";
     public static final int REQUEST_NOTIFICATION_PERMISSION = 2001;
     private static final String DEFAULT_TITLE = "费奥多尔";
+    public static final String ACK_API =
+            "https://love-style.xyz/api/wake_log/ack";
+    private static final String DELIVERY_PREFS = "elpis_delivery";
+    private static final String KEY_SHOWN_IDS = "shown_ids";
+    /** Cursor written by earlier ack-protocol builds; removed on the next ledger write. */
+    private static final String KEY_LEGACY_CURSOR = "wake_cursor";
+
+    /** Outcome of handing one delivered payload to the device. */
+    public enum Delivery { SHOWN, ALREADY_SHOWN, NOT_SHOWN, NOTHING }
 
     private NotificationSupport() {}
 
@@ -80,6 +97,8 @@ public final class NotificationSupport {
         WorkManager.getInstance(ctx.getApplicationContext())
                 .enqueueUniquePeriodicWork(
                         WORK_NAME, ExistingPeriodicWorkPolicy.KEEP, work);
+        // P2D (owner-approved 2026-10-23): seconds-fast delivery on top of the worker.
+        PushSupport.ensureRunning(ctx);
     }
 
     public static boolean showNotification(
@@ -113,5 +132,111 @@ public final class NotificationSupport {
                 .setPriority(NotificationCompat.PRIORITY_HIGH);
         NotificationManagerCompat.from(ctx).notify(notificationId, builder.build());
         return true;
+    }
+
+    /**
+     * Ack-protocol poll URL. No cursor: every delivery is confirmed by an explicit per-id ack.
+     * known_call comes from the CallState snapshot taken for this request (state, never an ack).
+     */
+    public static String pollUrl(Context ctx, int waitSeconds, CallState.Snapshot call) {
+        return API + "?protocol=ack&wait=" + waitSeconds + CallNotificationSupport.pollQuery(call);
+    }
+
+    /**
+     * Show a pending-notification payload at most once per id on this device,
+     * then acknowledge it. Shared by NotificationPollWorker and PushService.
+     * {@code call} is the CallState snapshot the request was sent with.
+     */
+    public static Delivery handlePayload(Context ctx, JSONObject payload, CallState.Snapshot call) {
+        // The call delta rides beside the message and never waits on it or its ack;
+        // a stale call delta is dropped, the message is still shown and acked.
+        CallNotificationSupport.handleDelta(ctx, payload, call);
+        if (payload == null || !payload.optBoolean("has_message", false)) {
+            return Delivery.NOTHING;
+        }
+        String id = payload.optString("id", "");
+        String content = payload.optString("content", "");
+        if (id.isEmpty() || content.trim().isEmpty()) {
+            return Delivery.NOTHING;
+        }
+        Delivery result = showOnce(ctx, id, payload.optString("title", ""), content);
+        if (result != Delivery.NOT_SHOWN) {
+            ack(ctx, id);
+        }
+        return result;
+    }
+
+    static Delivery showOnce(Context ctx, String id, String title, String content) {
+        final SharedPreferences sp = prefs(ctx);
+        DeliveryLedger.Result result = DeliveryLedger.deliver(
+                new DeliveryLedger.Store() {
+                    @Override public String readShownIds() {
+                        return sp.getString(KEY_SHOWN_IDS, "");
+                    }
+                    @Override public void write(String shownIds) {
+                        sp.edit()
+                                .putString(KEY_SHOWN_IDS, shownIds)
+                                .remove(KEY_LEGACY_CURSOR)
+                                .commit();
+                    }
+                },
+                id,
+                () -> showNotification(ctx, title, content, id));
+        switch (result) {
+            case SHOWN: return Delivery.SHOWN;
+            case ALREADY_SHOWN: return Delivery.ALREADY_SHOWN;
+            default: return Delivery.NOT_SHOWN;
+        }
+    }
+
+    /**
+     * Health Bridge device credential on a push request (ack protocol is
+     * authenticated). Returns false when this device is not enrolled; callers
+     * then skip the request instead of falling back to the legacy protocol.
+     */
+    public static boolean authorize(Context ctx, HttpURLConnection connection) {
+        HealthCredentialStore store = new HealthCredentialStore(ctx.getApplicationContext());
+        String deviceId = store.getDeviceId();
+        String credential = store.getCredential();
+        if (deviceId == null || deviceId.isEmpty() || credential == null || credential.isEmpty()) {
+            return false;
+        }
+        connection.setRequestProperty("Authorization", "Bearer " + credential);
+        connection.setRequestProperty("X-Health-Device-ID", deviceId);
+        return true;
+    }
+
+    /** Best effort and idempotent server-side; a lost ack is recovered by re-delivery after the lease. */
+    public static void ack(Context ctx, String id) {
+        HttpURLConnection connection = null;
+        try {
+            byte[] body = new JSONObject()
+                    .put("ids", new JSONArray(Arrays.asList(id)))
+                    .toString()
+                    .getBytes(StandardCharsets.UTF_8);
+            connection = (HttpURLConnection) new URL(ACK_API).openConnection();
+            if (!authorize(ctx, connection)) {
+                return;
+            }
+            connection.setRequestMethod("POST");
+            connection.setRequestProperty("Content-Type", "application/json");
+            connection.setConnectTimeout(8000);
+            connection.setReadTimeout(8000);
+            connection.setDoOutput(true);
+            try (OutputStream out = connection.getOutputStream()) {
+                out.write(body);
+            }
+            connection.getResponseCode();
+        } catch (Exception ignored) {
+        } finally {
+            if (connection != null) {
+                connection.disconnect();
+            }
+        }
+    }
+
+    private static SharedPreferences prefs(Context ctx) {
+        return ctx.getApplicationContext()
+                .getSharedPreferences(DELIVERY_PREFS, Context.MODE_PRIVATE);
     }
 }
