@@ -125,6 +125,13 @@ else
   pass "physical layer has no forbidden background/network/persistence capability"
 fi
 
+# HMS Activity Identification was removed 2026-10-24 (owner decision); it must not come back
+# through sources, the apply script or the generated build.
+if grep -rIl -i 'huawei\|HmsActivity\|agconnect' "$ROOT/native" "$ROOT/scripts/apply-p2c1-physical.sh" 2>/dev/null; then
+  fail "HMS / AGConnect is back"
+else
+  pass "no HMS or AGConnect in native sources or the P2C.1 apply script"
+fi
 require_file "$MANIFEST"
 if [[ -f "$MANIFEST" ]]; then
   # FOREGROUND_SERVICE, FOREGROUND_SERVICE_REMOTE_MESSAGING and RECEIVE_BOOT_COMPLETED belong to P2D;

@@ -112,7 +112,7 @@ fi
 grep -Fq '"ElpisNative"' "$MAIN"
 grep -Fq '"ElpisNotifications"' "$MAIN"
 grep -Fq '"ElpisPhysical"' "$MAIN"
-grep -Fq '"ElpisActivity"' "$MAIN"
+! grep -Fq '"ElpisActivity"' "$MAIN"  # HMS Activity was removed 2026-10-24
 grep -Fq '"ElpisHealth"' "$MAIN"
 grep -Fq 'HealthSupport.ensureScheduled' "$MAIN"
 grep -Fq 'getBuildInfo' "$ROOT/native/HealthBridge.java"
@@ -159,7 +159,7 @@ from pathlib import Path
 
 source = Path(sys.argv[1]).read_text()
 start = source.index("public void requestHealthConnectPermissions()")
-end = source.index("\n    private void requestHmsActivityPermissionIfNeeded()", start)
+end = source.index("\n    }\n", start)
 method = source[start:end]
 assert "HealthConnectReader.permissionsForRequest" in method
 assert "runOnUiThread" in method
