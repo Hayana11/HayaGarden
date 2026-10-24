@@ -5,6 +5,9 @@ import android.content.Context;
 import android.media.AudioDeviceInfo;
 import android.media.AudioManager;
 import android.os.Build;
+import android.os.Handler;
+import android.os.Looper;
+import android.util.Log;
 import android.webkit.CookieManager;
 import android.webkit.JavascriptInterface;
 import android.webkit.WebView;
@@ -39,9 +42,14 @@ import org.json.JSONObject;
  * All player and AudioManager work happens on the main thread.
  */
 public final class CallAudioBridge implements AutoCloseable {
+    private static final String TAG = "ElpisCallAudio";
+    /** How long the platform gets to apply a device choice before the fallback is tried. */
+    private static final long ROUTE_CHECK_MS = 700;
     private final Activity activity;
     private final WebView webView;
     private final AudioManager audioManager;
+    private final Handler main = new Handler(Looper.getMainLooper());
+    private int routeRequest;
     private ExoPlayer player;
     private DefaultHttpDataSource.Factory httpFactory;
     private Object deviceListener;
@@ -156,12 +164,12 @@ public final class CallAudioBridge implements AutoCloseable {
         if (!active || audioManager == null) return;
         active = false;
         wantSpeaker = false;
+        routeRequest++;  // a pending route check must not act after the call
         stopListeningForDeviceChanges();
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             audioManager.clearCommunicationDevice();
-        } else {
-            audioManager.setSpeakerphoneOn(false);
         }
+        audioManager.setSpeakerphoneOn(false);  // undoes a fallback too
         audioManager.setMode(AudioManager.MODE_NORMAL);
     }
 
@@ -208,21 +216,50 @@ public final class CallAudioBridge implements AutoCloseable {
         return player;
     }
 
+    /**
+     * Asks for the wanted device. Some builds refuse setCommunicationDevice or
+     * accept it without switching, so the result is checked once the platform
+     * had time to apply it, and setSpeakerphoneOn is tried as a fallback.
+     */
     private void applyRoute() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            int wanted = wantSpeaker
-                    ? AudioDeviceInfo.TYPE_BUILTIN_SPEAKER
-                    : AudioDeviceInfo.TYPE_BUILTIN_EARPIECE;
-            List<AudioDeviceInfo> devices = audioManager.getAvailableCommunicationDevices();
-            for (AudioDeviceInfo device : devices) {
-                if (device.getType() == wanted) {
-                    audioManager.setCommunicationDevice(device);
-                    return;
-                }
-            }
-        } else {
-            audioManager.setSpeakerphoneOn(wantSpeaker);
+        final boolean speaker = wantSpeaker;
+        final int request = ++routeRequest;
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
+            audioManager.setSpeakerphoneOn(speaker);
+            return;
         }
+        int wanted = speaker
+                ? AudioDeviceInfo.TYPE_BUILTIN_SPEAKER
+                : AudioDeviceInfo.TYPE_BUILTIN_EARPIECE;
+        StringBuilder types = new StringBuilder();
+        boolean accepted = false;
+        for (AudioDeviceInfo device : audioManager.getAvailableCommunicationDevices()) {
+            types.append(device.getType()).append(' ');
+            if (!accepted && device.getType() == wanted) {
+                accepted = audioManager.setCommunicationDevice(device);
+            }
+        }
+        Log.i(TAG, "route speaker=" + speaker + " accepted=" + accepted + " available=[" + types.toString().trim() + "]");
+        if (!accepted) {
+            fallBackToSpeakerphone(speaker);
+            return;
+        }
+        main.postDelayed(() -> {
+            if (closed || !active || request != routeRequest) return;
+            String want = speaker ? "speaker" : "earpiece";
+            String now = currentRoute();
+            if (!want.equals(now)) {
+                Log.w(TAG, "route still " + now + " after setCommunicationDevice; wanted " + want);
+                fallBackToSpeakerphone(speaker);
+            }
+        }, ROUTE_CHECK_MS);
+    }
+
+    @SuppressWarnings("deprecation")
+    private void fallBackToSpeakerphone(boolean speaker) {
+        audioManager.setSpeakerphoneOn(speaker);
+        Log.i(TAG, "setSpeakerphoneOn(" + speaker + ") now " + currentRoute());
+        emitRoute();
     }
 
     /** What the platform says is in use, so the page's button follows the real route. */

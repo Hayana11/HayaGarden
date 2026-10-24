@@ -88,6 +88,13 @@ assert 'applyRoute();' in body
 for word in ('player', 'stop', 'prepare', 'setMediaItem'):
     assert word not in body, word
 PY
+has 'accepted = audioManager.setCommunicationDevice(device);' "$BRIDGE" \
+  && has 'fallBackToSpeakerphone(speaker);' "$BRIDGE" && has 'audioManager.setSpeakerphoneOn(speaker);' "$BRIDGE" \
+  && pass "a refused or ignored device choice falls back to setSpeakerphoneOn" || fail "route result unchecked or no fallback"
+has 'if (!want.equals(now))' "$BRIDGE" && has 'ROUTE_CHECK_MS' "$BRIDGE" \
+  && pass "the applied route is verified after the platform had time" || fail "applied route never verified"
+has 'audioManager.setSpeakerphoneOn(false);  // undoes a fallback too' "$BRIDGE" \
+  && pass "end also undoes a speakerphone fallback" || fail "end leaves a speakerphone fallback on"
 has 'addOnCommunicationDeviceChangedListener' "$BRIDGE" \
   && pass "route events follow the platform's device changes" || fail "no device-change listener"
 for event in '"started"' '"ended"' '"error"' '"route"'; do
