@@ -90,6 +90,9 @@ jobs:
       - name: Apply P2H-1 native call audio
         run: bash scripts/apply-p2h-call-audio.sh
 
+      - name: Apply P2H-3A Core-Telecom probe
+        run: bash scripts/apply-p2h3a-telecom-spike.sh
+
       - name: Health Bridge R1 contract test
         run: bash scripts/test-health-r1.sh
 
@@ -122,6 +125,9 @@ jobs:
 
       - name: P2H-1 call audio contract test
         run: bash scripts/test-p2h-call-audio.sh android
+
+      - name: P2H-3A Core-Telecom probe contract test
+        run: bash scripts/test-p2h3a-telecom-spike.sh android
 
       - name: Generate app icons
         run: |
