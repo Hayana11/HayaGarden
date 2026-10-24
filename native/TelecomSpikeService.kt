@@ -30,11 +30,13 @@ import java.text.SimpleDateFormat
 import java.util.ArrayDeque
 import java.util.Date
 import java.util.Locale
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.launch
 
@@ -45,7 +47,7 @@ import kotlinx.coroutines.launch
  *
  * Only the phoneCall type is used (owner-approved); the microphone FGS type is
  * not. Whether the recorder keeps real data with the screen off under
- * phoneCall alone is one of the questions (see zeroReads in the log).
+ * phoneCall alone was one of the questions (r1 on Reno16: yes).
  *
  * It does not touch the real call loop (CallScreen, VoiceBridge,
  * CallAudioBridge). Everything it learns goes to logcat (tag ElpisTelecomSpike)
@@ -60,6 +62,9 @@ class TelecomSpikeService : Service() {
     private var endpoints: List<CallEndpointCompat> = emptyList()
     private var answered = false
     private var startedAt = 0L
+    private var hangupRequestedAt = 0L
+    private var scopeExited = false
+    private var finished = false
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -67,7 +72,11 @@ class TelecomSpikeService : Service() {
         val action = intent?.action ?: return START_NOT_STICKY
         when (action) {
             ACTION_INCOMING, ACTION_OUTGOING -> startCall(action == ACTION_INCOMING)
-            else -> commands.trySend(action)
+            else -> {
+                // logged on arrival, so a slow disconnect() is not mistaken for a lost tap
+                if (action == ACTION_HANGUP) log("hangup command received (call running=${callJob != null})")
+                commands.trySend(action)
+            }
         }
         return START_NOT_STICKY
     }
@@ -79,6 +88,9 @@ class TelecomSpikeService : Service() {
         }
         createChannel()
         answered = !incoming
+        hangupRequestedAt = 0L
+        scopeExited = false
+        finished = false
         if (!promote(notification(incoming = incoming))) {
             stopSelf()
             return
@@ -89,7 +101,7 @@ class TelecomSpikeService : Service() {
             log("registerAppWithTelecom OK")
         } catch (e: Exception) {
             log("registerAppWithTelecom FAILED: $e")
-            finish()
+            finish("registerAppWithTelecom failed")
             return
         }
         val attributes = CallAttributesCompat(
@@ -104,7 +116,11 @@ class TelecomSpikeService : Service() {
                 manager.addCall(
                     attributes,
                     onAnswer = { type -> log("telecom onAnswer type=$type (answered by a system surface)"); live() },
-                    onDisconnect = { cause -> log("telecom onDisconnect $cause"); commands.trySend(ACTION_ENDED) },
+                    onDisconnect = { cause ->
+                        log("telecom onDisconnect $cause")
+                        stopRecording("telecom onDisconnect")
+                        commands.trySend(ACTION_ENDED)
+                    },
                     onSetActive = { log("telecom onSetActive") },
                     onSetInactive = { log("telecom onSetInactive") },
                 ) {
@@ -122,10 +138,15 @@ class TelecomSpikeService : Service() {
                         for (command in commands) if (!handle(command)) break
                     }
                 }
+            } catch (e: CancellationException) {
+                log("call scope cancelled by the probe" + sinceHangup())
+                throw e
             } catch (e: Exception) {
                 log("addCall FAILED: $e")
             }
-            finish()
+            scopeExited = true
+            log("CallControlScope exited (addCall returned)" + sinceHangup())
+            finish("call scope exited")
         }
     }
 
@@ -137,13 +158,44 @@ class TelecomSpikeService : Service() {
             ACTION_SPEAKER -> route(CallEndpointCompat.TYPE_SPEAKER)
             ACTION_BLUETOOTH -> route(CallEndpointCompat.TYPE_BLUETOOTH)
             ACTION_HANGUP -> {
-                log("disconnect(LOCAL) -> ${disconnect(DisconnectCause(DisconnectCause.LOCAL))}")
+                if (hangupRequestedAt > 0) {
+                    log("hangup ignored: disconnect already requested" + sinceHangup())
+                    return true
+                }
+                // an unanswered incoming call is rejected; an answered one ends locally
+                val cause = if (answered) DisconnectCause.LOCAL else DisconnectCause.REJECTED
+                hangupRequestedAt = SystemClock.elapsedRealtime()
+                log("disconnect requested cause=${causeName(cause)}")
+                armTeardownWatchdog()
+                val result = disconnect(DisconnectCause(cause))
+                log("disconnect result=$result elapsedMs=${SystemClock.elapsedRealtime() - hangupRequestedAt}")
+                // local media never waits on Telecom closing the call scope
+                if (result is CallControlResult.Success) stopRecording("disconnect succeeded")
                 return false
             }
             ACTION_ENDED -> return false
         }
         return true
     }
+
+    /**
+     * Bounded wait for Telecom's teardown: if the call scope has not closed
+     * TEARDOWN_TIMEOUT_MS after the disconnect request (Success or not), the
+     * probe stops its own media, cancels the scope and ends the service.
+     */
+    private fun armTeardownWatchdog() {
+        scope.launch {
+            delay(TEARDOWN_TIMEOUT_MS)
+            if (scopeExited || finished) return@launch
+            log("teardown watchdog: call scope still open" + sinceHangup() + "; cancelling it and ending the probe")
+            stopRecording("teardown watchdog")
+            callJob?.cancel()
+            finish("teardown watchdog")
+        }
+    }
+
+    private fun sinceHangup(): String =
+        if (hangupRequestedAt > 0) " ${SystemClock.elapsedRealtime() - hangupRequestedAt}ms after the disconnect request" else ""
 
     private fun goLive(result: CallControlResult, what: String) {
         log("$what -> $result")
@@ -205,7 +257,7 @@ class TelecomSpikeService : Service() {
             val buffer = ShortArray(size / 2)
             var frames = 0L
             var peak = 0
-            var silentReads = 0
+            var allZeroBuffers = 0
             var lastReport = SystemClock.elapsedRealtime()
             try {
                 record.startRecording()
@@ -219,19 +271,19 @@ class TelecomSpikeService : Service() {
                     frames += n
                     var readPeak = 0
                     for (i in 0 until n) readPeak = maxOf(readPeak, kotlin.math.abs(buffer[i].toInt()))
-                    if (readPeak == 0) silentReads++
+                    if (readPeak == 0) allZeroBuffers++
                     peak = maxOf(peak, readPeak)
                     val now = SystemClock.elapsedRealtime()
                     if (now - lastReport >= REPORT_MS) {
-                        // all-zero reads mean the OS is silencing a backgrounded recorder
-                        log("audio +${frames} frames peak=$peak zeroReads=$silentReads")
-                        frames = 0; peak = 0; silentReads = 0; lastReport = now
+                        // all-zero buffers also occur in the foreground when idle: not proof of muting
+                        log("audio +${frames} frames peak=$peak allZeroBuffers=$allZeroBuffers")
+                        frames = 0; peak = 0; allZeroBuffers = 0; lastReport = now
                     }
                 }
             } finally {
                 record.stop()
                 record.release()
-                log("AudioRecord released")
+                log("AudioRecord.release() done")
             }
         }, "TelecomSpikeRecorder").apply { start() }
     }
@@ -271,13 +323,24 @@ class TelecomSpikeService : Service() {
             NotificationChannel(CHANNEL_ID, "Telecom 探针", NotificationManager.IMPORTANCE_HIGH))
     }
 
-    private fun finish() {
+    private fun stopRecording(reason: String) {
+        if (!recording) return
         recording = false
+        log("stopping AudioRecord ($reason)")
         recorder?.join(1000)
         recorder = null
+    }
+
+    /** Idempotent: the scope exit and the watchdog may both get here. */
+    private fun finish(reason: String) {
+        if (finished) return
+        finished = true
+        log("finish($reason)")
+        stopRecording("finish")
         if (startedAt > 0) log("call lasted ${(SystemClock.elapsedRealtime() - startedAt) / 1000}s")
         callJob = null
         stopForeground(STOP_FOREGROUND_REMOVE)
+        log("stopForeground done")
         stopSelf()
         log("probe ended")
     }
@@ -301,6 +364,7 @@ class TelecomSpikeService : Service() {
         const val ACTION_HANGUP = "elpis.telecom_spike.HANGUP"
         private const val ACTION_ENDED = "elpis.telecom_spike.ENDED"
         private const val REPORT_MS = 5000L
+        private const val TEARDOWN_TIMEOUT_MS = 8000L
         private const val MAX_LINES = 200
 
         private val lines = ArrayDeque<String>()
@@ -332,6 +396,12 @@ class TelecomSpikeService : Service() {
             CallEndpointCompat.TYPE_WIRED_HEADSET -> "wired"
             CallEndpointCompat.TYPE_STREAMING -> "streaming"
             else -> "unknown($type)"
+        }
+
+        fun causeName(code: Int): String = when (code) {
+            DisconnectCause.LOCAL -> "LOCAL"
+            DisconnectCause.REJECTED -> "REJECTED"
+            else -> code.toString()
         }
 
         fun describe(endpoint: CallEndpointCompat): String = "${typeName(endpoint.type)}:${endpoint.name}"

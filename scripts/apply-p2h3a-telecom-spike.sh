@@ -49,8 +49,17 @@ ensure_dependency() {
   ' "$GRADLE" > "$tmp" || { rm -f "$tmp"; echo "missing app dependencies block" >&2; exit 1; }
   mv "$tmp" "$GRADLE"
 }
-ensure_dependency "androidx.core:core-telecom:1.0.1"
-ensure_dependency "org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1"
+# Latest official Core-Telecom (Upstream Fidelity: reproduce here before any OEM
+# workaround). It needs compileSdk 36.1 (AGP >= 8.9.1; the template's AGP is
+# 8.13.0); targetSdk stays as generated, so runtime behaviour does not change.
+ensure_dependency "androidx.core:core-telecom:1.1.0-rc01"
+ensure_dependency "org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0"
+
+if ! grep -Eq '^[[:space:]]*compileSdkMinor[[:space:]]*=' "$GRADLE"; then
+  grep -Eq '^[[:space:]]*compileSdk[[:space:]]*=' "$GRADLE" \
+    || { echo "missing compileSdk line in $GRADLE" >&2; exit 1; }
+  sed -i -E '0,/^([[:space:]]*)compileSdk[[:space:]]*=.*$/s//&\n\1compileSdkMinor = 1/' "$GRADLE"
+fi
 
 ensure_permission() {
   if ! grep -Fq "android.permission.$1\"" "$MANIFEST"; then
