@@ -241,7 +241,7 @@ public final class CallAudioBridge implements AutoCloseable {
         }
         Log.i(TAG, "route speaker=" + speaker + " accepted=" + accepted + " available=[" + types.toString().trim() + "]");
         if (!accepted) {
-            fallBackToSpeakerphone(speaker);
+            fallBackToSpeakerphone(speaker, request);
             return;
         }
         main.postDelayed(() -> {
@@ -250,16 +250,29 @@ public final class CallAudioBridge implements AutoCloseable {
             String now = currentRoute();
             if (!want.equals(now)) {
                 Log.w(TAG, "route still " + now + " after setCommunicationDevice; wanted " + want);
-                fallBackToSpeakerphone(speaker);
+                fallBackToSpeakerphone(speaker, request);
             }
         }, ROUTE_CHECK_MS);
     }
 
+    /**
+     * A device chosen with setCommunicationDevice stays in force until it is
+     * cleared, so it is cleared before the legacy switch gets its turn. The
+     * outcome is read (and reported) after the platform had time to apply it;
+     * the device-change listener reports any later change too.
+     */
     @SuppressWarnings("deprecation")
-    private void fallBackToSpeakerphone(boolean speaker) {
+    private void fallBackToSpeakerphone(boolean speaker, int request) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            audioManager.clearCommunicationDevice();
+        }
         audioManager.setSpeakerphoneOn(speaker);
-        Log.i(TAG, "setSpeakerphoneOn(" + speaker + ") now " + currentRoute());
-        emitRoute();
+        Log.i(TAG, "fallback: cleared communication device, setSpeakerphoneOn(" + speaker + ")");
+        main.postDelayed(() -> {
+            if (closed || !active || request != routeRequest) return;
+            Log.i(TAG, "after fallback route is " + currentRoute() + "; wanted " + (speaker ? "speaker" : "earpiece"));
+            emitRoute();
+        }, ROUTE_CHECK_MS);
     }
 
     /** What the platform says is in use, so the page's button follows the real route. */

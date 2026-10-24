@@ -89,8 +89,15 @@ for word in ('player', 'stop', 'prepare', 'setMediaItem'):
     assert word not in body, word
 PY
 has 'accepted = audioManager.setCommunicationDevice(device);' "$BRIDGE" \
-  && has 'fallBackToSpeakerphone(speaker);' "$BRIDGE" && has 'audioManager.setSpeakerphoneOn(speaker);' "$BRIDGE" \
+  && has 'fallBackToSpeakerphone(speaker, request);' "$BRIDGE" && has 'audioManager.setSpeakerphoneOn(speaker);' "$BRIDGE" \
   && pass "a refused or ignored device choice falls back to setSpeakerphoneOn" || fail "route result unchecked or no fallback"
+python3 - "$BRIDGE" <<'PY' && pass "the fallback clears the chosen device before setSpeakerphoneOn" || fail "fallback does not clear the communication device first"
+import sys
+src = open(sys.argv[1]).read()
+body = src[src.index('private void fallBackToSpeakerphone('):]
+body = body[:body.index('\n    }\n')]
+assert body.index('clearCommunicationDevice()') < body.index('setSpeakerphoneOn(speaker)')
+PY
 has 'if (!want.equals(now))' "$BRIDGE" && has 'ROUTE_CHECK_MS' "$BRIDGE" \
   && pass "the applied route is verified after the platform had time" || fail "applied route never verified"
 has 'audioManager.setSpeakerphoneOn(false);  // undoes a fallback too' "$BRIDGE" \
