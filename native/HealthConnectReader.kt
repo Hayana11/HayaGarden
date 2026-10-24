@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.health.connect.client.HealthConnectClient
 import androidx.health.connect.client.HealthConnectFeatures
 import androidx.health.connect.client.records.HeartRateRecord
+import androidx.health.connect.client.records.RestingHeartRateRecord
 import androidx.health.connect.client.records.SleepSessionRecord
 import androidx.health.connect.client.records.StepsRecord
 import androidx.health.connect.client.permission.HealthPermission
@@ -31,16 +32,20 @@ import java.util.LinkedHashSet
 object HealthConnectReader {
     private const val SOURCE = "health_connect"
     private const val HEART_RATE_LIMIT = 300
+    private const val RESTING_HEART_RATE_LIMIT = 30
     private const val STEPS_LIMIT = 100
     private const val SLEEP_LIMIT = 100
     private const val MAX_PAYLOAD_RECORDS =
-        HEART_RATE_LIMIT + STEPS_LIMIT + SLEEP_LIMIT
+        HEART_RATE_LIMIT + RESTING_HEART_RATE_LIMIT + STEPS_LIMIT + SLEEP_LIMIT
 
-    private val baseReadPermissions = setOf(
+    private val coreReadPermissions = setOf(
         HealthPermission.getReadPermission(HeartRateRecord::class),
         HealthPermission.getReadPermission(StepsRecord::class),
         HealthPermission.getReadPermission(SleepSessionRecord::class)
     )
+    private val restingReadPermission =
+        HealthPermission.getReadPermission(RestingHeartRateRecord::class)
+    private val baseReadPermissions = coreReadPermissions + setOf(restingReadPermission)
     private val backgroundReadPermission =
         HealthPermission.PERMISSION_READ_HEALTH_DATA_IN_BACKGROUND
 
@@ -96,7 +101,7 @@ object HealthConnectReader {
             .put("providerStatus", "UNAVAILABLE")
             .put("records", JSONArray())
         val statuses = JSONObject()
-        listOf("heart_rate", "steps", "sleep").forEach {
+        listOf("heart_rate", "resting_heart_rate", "steps", "sleep").forEach {
             statuses.put(it, metricStatus("UNAVAILABLE"))
         }
         output.put("metricStatuses", statuses)
@@ -142,8 +147,8 @@ object HealthConnectReader {
             else -> "denied"
         }
 
-        if (!granted.containsAll(baseReadPermissions)) {
-            listOf("heart_rate", "steps", "sleep").forEach {
+        if (!granted.containsAll(coreReadPermissions)) {
+            listOf("heart_rate", "resting_heart_rate", "steps", "sleep").forEach {
                 statuses.put(it, metricStatus("PERMISSION_DENIED"))
             }
             return output
@@ -160,18 +165,31 @@ object HealthConnectReader {
             .put("permissionState", permissionState("granted", backgroundState))
 
         val start = Instant.now().minus(7, ChronoUnit.DAYS)
+        val heartStart = Instant.now().minus(1, ChronoUnit.HOURS)
         val end = Instant.now()
         val zone = ZoneId.systemDefault()
         val heartRecords = JSONArray()
+        val restingRecords = JSONArray()
         val stepRecords = JSONArray()
         val sleepRecords = JSONArray()
 
-        val heartOk = readHeartRate(client, start, end, heartRecords, collectedAt)
+        val heartOk = readHeartRate(client, heartStart, end, heartRecords, collectedAt)
         statuses.put("heart_rate", metricStatus(
             if (!heartOk) "UNAVAILABLE"
             else if (heartRecords.length() > 0) "PASS"
             else "EMPTY"
         ))
+
+        if (!granted.contains(restingReadPermission)) {
+            statuses.put("resting_heart_rate", metricStatus("PERMISSION_DENIED"))
+        } else {
+            val restingOk = readRestingHeartRate(client, start, end, restingRecords, collectedAt)
+            statuses.put("resting_heart_rate", metricStatus(
+                if (!restingOk) "UNAVAILABLE"
+                else if (restingRecords.length() > 0) "PASS"
+                else "EMPTY"
+            ))
+        }
 
         // COUNT_TOTAL is the only canonical steps path. Raw interval records are
         // not summed manually because multiple origins can overlap.
@@ -191,6 +209,7 @@ object HealthConnectReader {
 
         val records = output.getJSONArray("records")
         appendRecords(records, heartRecords)
+        appendRecords(records, restingRecords)
         appendRecords(records, stepRecords)
         appendRecords(records, sleepRecords)
         if (records.length() > MAX_PAYLOAD_RECORDS) {
@@ -201,10 +220,10 @@ object HealthConnectReader {
                 .toString()
         }
 
-        val anyPass = listOf("heart_rate", "steps", "sleep").any {
+        val anyPass = listOf("heart_rate", "resting_heart_rate", "steps", "sleep").any {
             statuses.getJSONObject(it).optString("status") == "PASS"
         }
-        val anyUnavailable = listOf("heart_rate", "steps", "sleep").any {
+        val anyUnavailable = listOf("heart_rate", "resting_heart_rate", "steps", "sleep").any {
             statuses.getJSONObject(it).optString("status") == "UNAVAILABLE"
         }
         output.put("providerStatus", when {
@@ -248,7 +267,45 @@ object HealthConnectReader {
                     }
                 }
                 token = response.pageToken
-            } while (!token.isNullOrEmpty() && output.length() < HEART_RATE_LIMIT)
+            }             while (!token.isNullOrEmpty() && output.length() < HEART_RATE_LIMIT)
+            true
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    private suspend fun readRestingHeartRate(
+        client: HealthConnectClient,
+        start: Instant,
+        end: Instant,
+        output: JSONArray,
+        collectedAt: Instant
+    ): Boolean {
+        return try {
+            var token: String? = null
+            do {
+                val response = client.readRecords(
+                    ReadRecordsRequest(
+                        RestingHeartRateRecord::class,
+                        TimeRangeFilter.between(start, end),
+                        pageToken = token
+                    )
+                )
+                response.records.forEach { record ->
+                    if (output.length() >= RESTING_HEART_RATE_LIMIT) return@forEach
+                    output.put(JSONObject()
+                        .put("metric", "resting_heart_rate")
+                        .put("sampledAt", record.time.toString())
+                        .put("dataDate", localDateFor(record.time, record.zoneOffset))
+                        .put("value", record.beatsPerMinute)
+                        .put("unit", "bpm")
+                        .put("details", JSONObject())
+                        .put("source", SOURCE)
+                        .put("sourceRecordId", record.metadata.id)
+                        .put("collectedAt", collectedAt.toString()))
+                }
+                token = response.pageToken
+            } while (!token.isNullOrEmpty() && output.length() < RESTING_HEART_RATE_LIMIT)
             true
         } catch (_: Exception) {
             false

@@ -17,6 +17,7 @@ public final class HealthStateStore {
     private static final int SCHEMA_VERSION = 1;
     private static final int MAX_RECORDS = 500;
     private static final int HEART_RATE_LIMIT = 300;
+    private static final int RESTING_HEART_RATE_LIMIT = 30;
     private static final int STEPS_LIMIT = 100;
     private static final int SLEEP_LIMIT = 100;
     private final SharedPreferences prefs;
@@ -48,7 +49,7 @@ public final class HealthStateStore {
             JSONObject metrics = new JSONObject();
             JSONObject statuses = state.optJSONObject("metricStatuses");
             JSONArray records = state.optJSONArray("records");
-            for (String metric : new String[]{"heart_rate", "steps", "sleep"}) {
+            for (String metric : new String[]{"heart_rate", "resting_heart_rate", "steps", "sleep"}) {
                 JSONObject item = statuses == null ? null : statuses.optJSONObject(metric);
                 if (item == null) item = new JSONObject();
                 String status = item.optString("status", "UNAVAILABLE");
@@ -78,6 +79,7 @@ public final class HealthStateStore {
             JSONObject statuses = incoming.optJSONObject("metricStatuses");
             if (records == null || statuses == null || records.length() > MAX_RECORDS) return false;
             if (count(records, "heart_rate") > HEART_RATE_LIMIT
+                    || count(records, "resting_heart_rate") > RESTING_HEART_RATE_LIMIT
                     || count(records, "steps") > STEPS_LIMIT
                     || count(records, "sleep") > SLEEP_LIMIT) {
                 return false;
@@ -146,7 +148,7 @@ public final class HealthStateStore {
             state.put("uploadError", "");
             state.put("records", new JSONArray());
             JSONObject statuses = new JSONObject();
-            for (String metric : new String[]{"heart_rate", "steps", "sleep"}) {
+            for (String metric : new String[]{"heart_rate", "resting_heart_rate", "steps", "sleep"}) {
                 statuses.put(metric, new JSONObject()
                         .put("status", "UNAVAILABLE")
                         .put("source", "health_connect"));
