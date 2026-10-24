@@ -22,9 +22,7 @@ import com.getcapacitor.Bridge;
 import com.getcapacitor.BridgeActivity;
 
 public class MainActivity extends BridgeActivity {
-    private static final int REQUEST_HMS_ACTIVITY_PERMISSION = 19042;
     private PhysicalStateStore physicalStateStore;
-    private HmsActivityStore hmsActivityStore;
     private HealthStateStore healthStateStore;
     private ActivityResultLauncher<Set<String>> healthPermissionLauncher;
     private SpeechBridge speechBridge;
@@ -46,7 +44,6 @@ public class MainActivity extends BridgeActivity {
         configureTopStatusBar();
 
         physicalStateStore = new PhysicalStateStore(getApplicationContext());
-        hmsActivityStore = new HmsActivityStore(getApplicationContext());
         healthStateStore = new HealthStateStore(getApplicationContext());
 
         Bridge bridge = getBridge();
@@ -64,10 +61,6 @@ public class MainActivity extends BridgeActivity {
             webView.addJavascriptInterface(
                 new PhysicalBridge(physicalStateStore),
                 "ElpisPhysical"
-            );
-            webView.addJavascriptInterface(
-                new HmsActivityBridge(hmsActivityStore),
-                "ElpisActivity"
             );
             webView.addJavascriptInterface(
                 new HealthBridge(this, healthStateStore),
@@ -91,7 +84,6 @@ public class MainActivity extends BridgeActivity {
             NotificationSupport.ensurePollingScheduled(this);
         }
         handleNotificationIntent(getIntent());
-        requestHmsActivityPermissionIfNeeded();
 
         getOnBackPressedDispatcher().addCallback(
             this,
@@ -164,9 +156,6 @@ public class MainActivity extends BridgeActivity {
         if (physicalStateStore != null) {
             physicalStateStore.start();
         }
-        if (hmsActivityStore != null) {
-            hmsActivityStore.startIfPermitted();
-        }
         if (speechBridge != null) {
             speechBridge.resumed();
         }
@@ -186,7 +175,6 @@ public class MainActivity extends BridgeActivity {
         if (voiceBridge != null) {
             voiceBridge.release();
         }
-        // HMS updates intentionally remain registered while backgrounded.
         super.onPause();
     }
 
@@ -218,12 +206,6 @@ public class MainActivity extends BridgeActivity {
         if (voiceBridge != null) {
             voiceBridge.onPermissionResult(requestCode, grantResults);
         }
-        if (requestCode == REQUEST_HMS_ACTIVITY_PERMISSION
-                && hmsActivityStore != null
-                && grantResults.length > 0
-                && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
-            hmsActivityStore.startIfPermitted();
-        }
         if (requestCode == NotificationSupport.REQUEST_NOTIFICATION_PERMISSION
                 && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
                 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)
@@ -243,26 +225,6 @@ public class MainActivity extends BridgeActivity {
             } catch (Exception ignored) {
             }
         });
-    }
-
-    private void requestHmsActivityPermissionIfNeeded() {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
-            if (hmsActivityStore != null) {
-                hmsActivityStore.startIfPermitted();
-            }
-            return;
-        }
-        if (checkSelfPermission(Manifest.permission.ACTIVITY_RECOGNITION)
-                != PackageManager.PERMISSION_GRANTED) {
-            requestPermissions(
-                    new String[]{Manifest.permission.ACTIVITY_RECOGNITION},
-                    REQUEST_HMS_ACTIVITY_PERMISSION
-            );
-            return;
-        }
-        if (hmsActivityStore != null) {
-            hmsActivityStore.startIfPermitted();
-        }
     }
 
     private void handleNotificationIntent(Intent intent) {
