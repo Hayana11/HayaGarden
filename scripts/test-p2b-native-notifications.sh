@@ -76,10 +76,12 @@ else
   pass "worker is display-only"
 fi
 # P2D (owner-approved 2026-10-23) owns the push service, its starter and boot
-# receiver; they carry their own contract in test-p2d-push.sh. Everything else
+# receiver; they carry their own contract in test-p2d-push.sh. The P2H-3A
+# Core-Telecom probe (owner-approved 2026-10-24) owns its phoneCall service;
+# contract: test-p2h3a-telecom-spike.sh. Everything else, Java or Kotlin,
 # stays service- and receiver-free.
-P2D_OWNED='/(PushService|PushSupport|PushBootReceiver)\.java$'
-if ls "$NATIVE"/*.java | grep -vE "$P2D_OWNED" \
+P2D_OWNED='/(PushService|PushSupport|PushBootReceiver)\.java$|/TelecomSpike(Service|Activity)\.kt$'
+if ls "$NATIVE"/*.java "$NATIVE"/*.kt | grep -vE "$P2D_OWNED" \
     | xargs grep -E 'ForegroundService|startForegroundService|startService\(|BootReceiver'; then
   fail "custom native source contains forbidden service or receiver"
 else
