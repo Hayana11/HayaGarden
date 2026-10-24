@@ -159,7 +159,7 @@ from pathlib import Path
 
 source = Path(sys.argv[1]).read_text()
 start = source.index("public void requestHealthConnectPermissions()")
-end = source.index("\n    private void requestHmsActivityPermissionIfNeeded()", start)
+end = source.index("\n    }\n", start)
 method = source[start:end]
 assert "HealthConnectReader.permissionsForRequest" in method
 assert "runOnUiThread" in method
