@@ -112,7 +112,7 @@ fi
 grep -Fq '"ElpisNative"' "$MAIN"
 grep -Fq '"ElpisNotifications"' "$MAIN"
 grep -Fq '"ElpisPhysical"' "$MAIN"
-grep -Fq '"ElpisActivity"' "$MAIN"
+! grep -Fq '"ElpisActivity"' "$MAIN"  # HMS Activity was removed 2026-10-24
 grep -Fq '"ElpisHealth"' "$MAIN"
 grep -Fq 'HealthSupport.ensureScheduled' "$MAIN"
 grep -Fq 'getBuildInfo' "$ROOT/native/HealthBridge.java"
