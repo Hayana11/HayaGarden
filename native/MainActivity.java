@@ -29,6 +29,7 @@ public class MainActivity extends BridgeActivity {
     private ActivityResultLauncher<Set<String>> healthPermissionLauncher;
     private SpeechBridge speechBridge;
     private VoiceBridge voiceBridge;
+    private CallAudioBridge callAudioBridge;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -80,6 +81,8 @@ public class MainActivity extends BridgeActivity {
             webView.addJavascriptInterface(speechBridge, "ElpisSpeech");
             voiceBridge = new VoiceBridge(this, webView);
             webView.addJavascriptInterface(voiceBridge, "ElpisVoice");
+            callAudioBridge = new CallAudioBridge(this, webView);
+            webView.addJavascriptInterface(callAudioBridge, "ElpisCallAudio");
         }
 
         HealthSupport.ensureScheduled(this);
@@ -191,6 +194,9 @@ public class MainActivity extends BridgeActivity {
     public void onDestroy() {
         if (voiceBridge != null) {
             voiceBridge.close();
+        }
+        if (callAudioBridge != null) {
+            callAudioBridge.close();
         }
         super.onDestroy();
     }

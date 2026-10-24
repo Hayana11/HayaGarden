@@ -87,6 +87,9 @@ jobs:
       - name: Apply P2F native voice
         run: bash scripts/apply-p2f-voice.sh
 
+      - name: Apply P2H-1 native call audio
+        run: bash scripts/apply-p2h-call-audio.sh
+
       - name: Health Bridge R1 contract test
         run: bash scripts/test-health-r1.sh
 
@@ -116,6 +119,9 @@ jobs:
 
       - name: P2F voice contract test
         run: bash scripts/test-p2f-voice.sh
+
+      - name: P2H-1 call audio contract test
+        run: bash scripts/test-p2h-call-audio.sh android
 
       - name: Generate app icons
         run: |
