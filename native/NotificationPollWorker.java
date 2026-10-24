@@ -10,7 +10,7 @@ import java.net.HttpURLConnection;
 import java.net.URL;
 import org.json.JSONObject;
 
-/** Best-effort 15-minute display-only polling. */
+/** Best-effort 15-minute display-only polling (ack protocol; shown once per id). */
 public class NotificationPollWorker extends Worker {
     public NotificationPollWorker(
             @NonNull Context appContext, @NonNull WorkerParameters workerParams) {
@@ -25,9 +25,15 @@ public class NotificationPollWorker extends Worker {
         }
 
         HttpURLConnection connection = null;
+        // Bound to this request: its response may only apply a call delta against it.
+        CallState.Snapshot call = CallState.snapshot();
         try {
-            URL url = new URL(NotificationSupport.API);
+            URL url = new URL(NotificationSupport.pollUrl(getApplicationContext(), 0, call));
             connection = (HttpURLConnection) url.openConnection();
+            if (!NotificationSupport.authorize(getApplicationContext(), connection)) {
+                // Not enrolled as a Health Bridge device: the ack protocol cannot authenticate.
+                return Result.success();
+            }
             connection.setRequestMethod("GET");
             connection.setConnectTimeout(8000);
             connection.setReadTimeout(8000);
@@ -48,21 +54,7 @@ public class NotificationPollWorker extends Worker {
             }
 
             JSONObject payload = new JSONObject(response.toString());
-            if (!payload.optBoolean("has_message", false)) {
-                return Result.success();
-            }
-
-            String content = payload.optString("content", "");
-            if (content.trim().isEmpty()) {
-                return Result.success();
-            }
-            String title = payload.optString("title", "费奥多尔");
-            if (title.trim().isEmpty()) {
-                title = "费奥多尔";
-            }
-            String messageId = payload.optString("id", "");
-            NotificationSupport.showNotification(
-                    getApplicationContext(), title, content, messageId);
+            NotificationSupport.handlePayload(getApplicationContext(), payload, call);
             return Result.success();
         } catch (Exception ignored) {
             return Result.retry();

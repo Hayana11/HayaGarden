@@ -44,7 +44,20 @@ else
   echo "xmlns:tools already present in AndroidManifest.xml"
 fi
 
-# 4. Idempotent minimal permission inserts after INTERNET (or after existing block).
+# 4. Ensure Android resizes the Capacitor window when the IME opens.
+if ! grep -q 'android:windowSoftInputMode="adjustResize"' "$MANIFEST"; then
+  if ! grep -Eq 'android:name="[^"]*MainActivity"' "$MANIFEST"; then
+    echo "MainActivity activity entry not found; cannot set adjustResize" >&2
+    exit 1
+  fi
+  sed -i '/android:name="[^"]*MainActivity"/a\
+    android:windowSoftInputMode="adjustResize"' "$MANIFEST"
+  echo "set MainActivity windowSoftInputMode=adjustResize"
+else
+  echo "MainActivity windowSoftInputMode=adjustResize already present"
+fi
+
+# 5. Idempotent minimal permission inserts after INTERNET (or after existing block).
 ensure_permission() {
   local name="$1"
   local line="$2"

@@ -9,8 +9,9 @@ DEST_DIR="$ROOT/android/app/src/main/java/xyz/lovestyle/home/canary"
 MANIFEST="$ROOT/android/app/src/main/AndroidManifest.xml"
 GRADLE="$ROOT/android/app/build.gradle"
 
-for required in "$P2A" "$NATIVE/NotificationSupport.java" \
+for required in "$P2A" "$NATIVE/NotificationSupport.java" "$NATIVE/DeliveryLedger.java" \
                 "$NATIVE/NotificationPollWorker.java" "$NATIVE/NotificationBridge.java" \
+                "$NATIVE/CallNotificationSupport.java" "$NATIVE/CallState.java" \
                 "$NATIVE/drawable/ic_elpis_notification_cat.xml"; do
   if [[ ! -f "$required" ]]; then
     echo "missing $required" >&2
@@ -28,12 +29,22 @@ RES_DIR="$ROOT/android/app/src/main/res/drawable"
 mkdir -p "$DEST_DIR" "$RES_DIR"
 cp "$NATIVE/drawable/ic_elpis_notification_cat.xml" "$RES_DIR/ic_elpis_notification_cat.xml"
 cp "$NATIVE/NotificationSupport.java" "$DEST_DIR/NotificationSupport.java"
+cp "$NATIVE/DeliveryLedger.java" "$DEST_DIR/DeliveryLedger.java"
 cp "$NATIVE/NotificationPollWorker.java" "$DEST_DIR/NotificationPollWorker.java"
 cp "$NATIVE/NotificationBridge.java" "$DEST_DIR/NotificationBridge.java"
+cp "$NATIVE/CallNotificationSupport.java" "$DEST_DIR/CallNotificationSupport.java"
+cp "$NATIVE/CallState.java" "$DEST_DIR/CallState.java"
 
 if ! grep -q 'android.permission.POST_NOTIFICATIONS' "$MANIFEST"; then
   sed -i '/android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS/a\
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />' "$MANIFEST"
+fi
+
+# His incoming call vibrates (CallNotificationSupport channel); some OEM
+# builds (ColorOS) drop notification vibration for apps without VIBRATE.
+if ! grep -q 'android.permission.VIBRATE' "$MANIFEST"; then
+  sed -i '/android.permission.POST_NOTIFICATIONS/a\
+    <uses-permission android:name="android.permission.VIBRATE" />' "$MANIFEST"
 fi
 
 if ! grep -Fq 'androidx.work:work-runtime:2.9.0' "$GRADLE"; then

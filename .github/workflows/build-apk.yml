@@ -14,11 +14,13 @@ on:
       - claude/p2b1-notification-icon-polish
       - agent/p2c1-physical-reality-sensors
       - agent/elpis-canary-health-bridge-r1
+      - claude/focused-ramanujan-ua44pc
       - 'cursor/**'
   workflow_dispatch:
   pull_request:
     branches:
       - main
+      - claude/p2b1-notification-icon-polish
       - claude/app-shell-reset-p1-navigation
       - claude/app-shell-p2a-nativebridge-lite
 
@@ -52,6 +54,12 @@ jobs:
       - name: Sync Capacitor
         run: npx cap sync android
 
+      - name: Stamp build version
+        env:
+          BUILD_NUMBER: ${{ github.run_number }}
+          BUILD_SHA: ${{ github.sha }}
+        run: bash scripts/apply-build-version.sh
+
       - name: Inject AGConnect config when configured
         env:
           AGCONNECT_SERVICES_JSON_B64: ${{ secrets.AGCONNECT_SERVICES_JSON_B64 }}
@@ -70,17 +78,50 @@ jobs:
       - name: Apply Health Bridge R1
         run: bash scripts/apply-health-r1.sh
 
+      - name: Apply P2D push long poll
+        run: bash scripts/apply-p2d-push.sh
+
+      - name: Apply P2E speech bridge
+        run: bash scripts/apply-p2e-speech.sh
+
+      - name: Apply P2F native voice
+        run: bash scripts/apply-p2f-voice.sh
+
+      - name: Apply P2H-1 native call audio
+        run: bash scripts/apply-p2h-call-audio.sh
+
       - name: Health Bridge R1 contract test
         run: bash scripts/test-health-r1.sh
 
+      - name: IME edge-to-edge contract test
+        run: bash scripts/test-ime-edge-to-edge.sh android
+
       - name: P2B contract test
         run: bash scripts/test-p2b-native-notifications.sh
+
+      - name: P2G call notification contract test
+        run: bash scripts/test-p2g-call-notification.sh android
 
       - name: P2C.1 contract test
         run: bash scripts/test-p2c1-physical.sh
 
       - name: HMS Activity R1 contract test
         run: bash scripts/test-hms-activity-r1.sh
+
+      - name: Top safe inset and edge-to-edge contract test
+        run: bash scripts/test-top-safe-inset-edge-to-edge.sh
+
+      - name: P2D push contract test
+        run: bash scripts/test-p2d-push.sh
+
+      - name: P2E speech contract test
+        run: bash scripts/test-p2e-speech.sh
+
+      - name: P2F voice contract test
+        run: bash scripts/test-p2f-voice.sh
+
+      - name: P2H-1 call audio contract test
+        run: bash scripts/test-p2h-call-audio.sh android
 
       - name: Generate app icons
         run: |
@@ -93,9 +134,15 @@ jobs:
       - name: Build debug APK
         run: cd android && chmod +x gradlew && ./gradlew clean assembleDebug --no-daemon
 
+      - name: Validate P2F APK contents
+        run: bash scripts/test-p2f-voice.sh android android/app/build/outputs/apk/debug/app-debug.apk
+
+      - name: Name APK artifact
+        run: mv android/app/build/outputs/apk/debug/app-debug.apk android/app/build/outputs/apk/debug/Elpis-Canary-health-r1-${{ github.run_number }}.apk
+
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
           name: Elpis-Canary-health-r1-${{ github.run_number }}
-          path: android/app/build/outputs/apk/debug/app-debug.apk
+          path: android/app/build/outputs/apk/debug/Elpis-Canary-health-r1-${{ github.run_number }}.apk
           retention-days: 30
