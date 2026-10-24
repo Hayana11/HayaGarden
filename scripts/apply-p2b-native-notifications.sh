@@ -40,6 +40,13 @@ if ! grep -q 'android.permission.POST_NOTIFICATIONS' "$MANIFEST"; then
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />' "$MANIFEST"
 fi
 
+# His incoming call vibrates (CallNotificationSupport channel); some OEM
+# builds (ColorOS) drop notification vibration for apps without VIBRATE.
+if ! grep -q 'android.permission.VIBRATE' "$MANIFEST"; then
+  sed -i '/android.permission.POST_NOTIFICATIONS/a\
+    <uses-permission android:name="android.permission.VIBRATE" />' "$MANIFEST"
+fi
+
 if ! grep -Fq 'androidx.work:work-runtime:2.9.0' "$GRADLE"; then
   cat >> "$GRADLE" <<'GRADLE'
 

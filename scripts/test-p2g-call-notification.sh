@@ -17,6 +17,8 @@ FAIL=0
 pass() { echo "PASS: $*"; }
 fail() { echo "FAIL: $*" >&2; FAIL=1; }
 
+grep -qF 'android.permission.VIBRATE' "$ROOT/scripts/apply-p2b-native-notifications.sh" \
+  && pass "P2B apply declares VIBRATE for the call vibration" || fail "P2B apply must add android.permission.VIBRATE"
 for f in "$CALL" "$STATE"; do
   [[ -f "$f" ]] && pass "present ${f#$ROOT/}" || fail "missing ${f#$ROOT/}"
 done
@@ -102,6 +104,10 @@ fi
 
 if [[ -n "$ANDROID_ROOT" ]]; then
   GEN_JAVA="$ANDROID_ROOT/app/src/main/java/xyz/lovestyle/home/canary"
+  GEN_MANIFEST="$ANDROID_ROOT/app/src/main/AndroidManifest.xml"
+  [[ "$(grep -Fc 'android.permission.VIBRATE"' "$GEN_MANIFEST" 2>/dev/null || true)" -eq 1 ]] \
+    && pass "generated manifest declares VIBRATE once (call vibration)" \
+    || fail "generated manifest must declare android.permission.VIBRATE exactly once"
   for name in CallNotificationSupport CallState; do
     [[ -f "$GEN_JAVA/$name.java" ]] && pass "generated $name.java exists" || fail "generated $name.java missing"
   done
