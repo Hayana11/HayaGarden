@@ -9,8 +9,14 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.media.AudioAttributes;
+import android.media.AudioManager;
 import android.media.RingtoneManager;
 import android.os.Build;
+import android.os.Handler;
+import android.os.Looper;
+import android.os.VibrationEffect;
+import android.os.Vibrator;
+import android.os.VibratorManager;
 import androidx.core.app.NotificationCompat;
 import androidx.core.app.NotificationManagerCompat;
 import org.json.JSONObject;
@@ -20,16 +26,22 @@ import org.json.JSONObject;
  * Not a delivery item: no DeliveryLedger, no ack. One open call at a time, so
  * one fixed notification id: a repeat updates it in place, "call": null
  * cancels it. Its own channel, because a channel's importance, sound and
- * vibration cannot be changed after it exists (v1 rang once, so v2 replaces it).
+ * vibration cannot be changed after it exists (v1 rang once; v2 vibrated once).
  *
- * It rings like a call: the ringtone and vibration repeat (FLAG_INSISTENT)
- * until the notification goes away: "call": null when the call is answered,
- * declined or missed, a tap that opens the call page, or at the latest
+ * It rings like a call until the call stops ringing: "call": null (answered,
+ * declined or missed), a tap that opens the call page, or at the latest
  * RING_CAP_MS, so a phone that misses the withdrawal never rings on and on.
+ * - Ringtone: the channel's sound, repeated by FLAG_INSISTENT (whose contract
+ *   covers audio only).
+ * - Vibration: owned by the app, not the channel. A channel pattern plays once
+ *   on some builds (ColorOS), so the channel has vibration off and a repeating
+ *   Vibrator waveform runs from SHOW to stopRinging(), with its own cap timer
+ *   fenced by CallState's ring token so an old call's timer never stops a new
+ *   call's ring.
  */
 public final class CallNotificationSupport {
-    public static final String CHANNEL_ID = "fyodor_call_v2";
-    static final String RETIRED_CHANNEL_ID = "fyodor_call_v1";
+    public static final String CHANNEL_ID = "fyodor_call_v3";
+    static final String[] RETIRED_CHANNEL_IDS = {"fyodor_call_v1", "fyodor_call_v2"};
     /** Server rings for 60 s (voice_call.store.RING_TIMEOUT_S); a little slack, then stop. */
     static final long RING_CAP_MS = 65_000L;
     private static final long[] VIBRATION = {0, 1000, 800, 1000, 800};
@@ -38,6 +50,11 @@ public final class CallNotificationSupport {
     public static final String CALL_URL = "https://love-style.xyz/dash/call";
     public static final String EXTRA_OPEN_CALL = "elpis.notification.open_call";
     private static final String DEFAULT_TITLE = "费佳来电";
+    private static final AudioAttributes RINGTONE_ATTRIBUTES = new AudioAttributes.Builder()
+            .setUsage(AudioAttributes.USAGE_NOTIFICATION_RINGTONE)
+            .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+            .build();
+    private static final Handler MAIN = new Handler(Looper.getMainLooper());
     private static final int TAP_REQUEST_CODE = 0xCA11;  // distinct from message taps
 
     private CallNotificationSupport() {}
@@ -75,7 +92,7 @@ public final class CallNotificationSupport {
                 show(ctx, title);
                 break;
             case CANCEL:
-                NotificationManagerCompat.from(ctx).cancel(NOTIFICATION_ID);
+                stopRinging(ctx);
                 break;
             default:
                 break;
@@ -95,20 +112,65 @@ public final class CallNotificationSupport {
                 CHANNEL_ID, CHANNEL_NAME, NotificationManager.IMPORTANCE_HIGH);
         channel.setSound(
                 RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE),
-                new AudioAttributes.Builder()
-                        .setUsage(AudioAttributes.USAGE_NOTIFICATION_RINGTONE)
-                        .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
-                        .build());
-        channel.enableVibration(true);
-        channel.setVibrationPattern(VIBRATION);
+                RINGTONE_ATTRIBUTES);
+        channel.enableVibration(false);  // vibration authority is startVibrating(), never both
         channel.setLockscreenVisibility(Notification.VISIBILITY_PUBLIC);
         manager.createNotificationChannel(channel);
-        manager.deleteNotificationChannel(RETIRED_CHANNEL_ID);
+        for (String retired : RETIRED_CHANNEL_IDS) {
+            manager.deleteNotificationChannel(retired);
+        }
     }
 
-    /** She opened the call page from the notification: stop ringing. */
+    /** The call stopped ringing (withdrawn, or she opened the call page): notification and vibration both stop. */
     public static void stopRinging(Context ctx) {
         NotificationManagerCompat.from(ctx).cancel(NOTIFICATION_ID);
+        CallState.endRing();  // any pending cap timer becomes a no-op
+        Vibrator vibrator = vibrator(ctx);
+        if (vibrator != null) {
+            vibrator.cancel();
+        }
+    }
+
+    /**
+     * Repeat the call vibration until stopRinging() or RING_CAP_MS. A new call
+     * replaces the previous ring. Honors silent ringer mode and Do Not Disturb.
+     */
+    static void startVibrating(Context ctx) {
+        long token = CallState.beginRing();
+        Vibrator vibrator = vibrator(ctx);
+        if (vibrator == null || !vibrator.hasVibrator()) {
+            return;
+        }
+        vibrator.cancel();
+        if (quiet(ctx)) {
+            return;
+        }
+        vibrator.vibrate(VibrationEffect.createWaveform(VIBRATION, 0), RINGTONE_ATTRIBUTES);
+        MAIN.postDelayed(() -> {
+            if (CallState.endRingIfCurrent(token)) {
+                vibrator.cancel();
+            }
+        }, RING_CAP_MS);
+    }
+
+    private static Vibrator vibrator(Context ctx) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            VibratorManager manager =
+                    (VibratorManager) ctx.getSystemService(Context.VIBRATOR_MANAGER_SERVICE);
+            return manager == null ? null : manager.getDefaultVibrator();
+        }
+        return (Vibrator) ctx.getSystemService(Context.VIBRATOR_SERVICE);
+    }
+
+    private static boolean quiet(Context ctx) {
+        AudioManager audio = (AudioManager) ctx.getSystemService(Context.AUDIO_SERVICE);
+        if (audio != null && audio.getRingerMode() == AudioManager.RINGER_MODE_SILENT) {
+            return true;
+        }
+        NotificationManager manager =
+                (NotificationManager) ctx.getSystemService(Context.NOTIFICATION_SERVICE);
+        return manager != null
+                && manager.getCurrentInterruptionFilter() != NotificationManager.INTERRUPTION_FILTER_ALL;
     }
 
     private static boolean canPost(Context ctx) {
@@ -142,7 +204,8 @@ public final class CallNotificationSupport {
                 .setTimeoutAfter(RING_CAP_MS)
                 .setContentIntent(tapIntent);
         Notification notification = builder.build();
-        notification.flags |= Notification.FLAG_INSISTENT;  // ring and vibrate until it goes away
+        notification.flags |= Notification.FLAG_INSISTENT;  // repeats the ringtone (audio only)
         NotificationManagerCompat.from(ctx).notify(NOTIFICATION_ID, notification);
+        startVibrating(ctx);
     }
 }

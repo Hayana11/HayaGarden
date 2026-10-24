@@ -20,6 +20,9 @@ public final class CallState {
     private static final Object LOCK = new Object();
     private static String known;
     private static long revision;
+    // The app-owned call vibration (CallNotificationSupport): which ring is live.
+    private static long ringToken;
+    private static boolean ringing;
 
     /** What one poll request was sent with: its known_call and the revision it may apply against. */
     public static final class Snapshot {
@@ -70,6 +73,37 @@ public final class CallState {
         }
     }
 
+    /** A new ring starts (replacing any earlier one). Returns its token for the cap timer. */
+    public static long beginRing() {
+        synchronized (LOCK) {
+            ringToken++;
+            ringing = true;
+            return ringToken;
+        }
+    }
+
+    /** The ring ends now (withdrawn or opened). Returns whether one was live. */
+    public static boolean endRing() {
+        synchronized (LOCK) {
+            boolean was = ringing;
+            ringing = false;
+            ringToken++;
+            return was;
+        }
+    }
+
+    /** The cap timer of ring {@code token}: ends it only if that ring is still the live one. */
+    public static boolean endRingIfCurrent(long token) {
+        synchronized (LOCK) {
+            if (!ringing || token != ringToken) {
+                return false;
+            }
+            ringing = false;
+            ringToken++;
+            return true;
+        }
+    }
+
     static boolean valid(String id) {
         if (id.isEmpty() || id.length() > 64) {
             return false;
@@ -87,6 +121,8 @@ public final class CallState {
         synchronized (LOCK) {
             known = null;
             revision = 0;
+            ringToken = 0;
+            ringing = false;
         }
     }
 }

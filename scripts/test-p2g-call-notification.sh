@@ -23,14 +23,16 @@ for f in "$CALL" "$STATE"; do
   [[ -f "$f" ]] && pass "present ${f#$ROOT/}" || fail "missing ${f#$ROOT/}"
 done
 
-for token in 'CHANNEL_ID = "fyodor_call_v2"' 'NotificationManager.IMPORTANCE_HIGH' \
+for token in 'CHANNEL_ID = "fyodor_call_v3"' 'NotificationManager.IMPORTANCE_HIGH' \
              'NotificationCompat.CATEGORY_CALL' '.setOngoing(true)' 'NOTIFICATION_ID = 0xCA11' \
              'CALL_URL = "https://love-style.xyz/dash/call"' '.cancel(NOTIFICATION_ID)' \
              '.notify(NOTIFICATION_ID, notification)' \
              'notification.flags |= Notification.FLAG_INSISTENT' \
              'RingtoneManager.TYPE_RINGTONE' 'AudioAttributes.USAGE_NOTIFICATION_RINGTONE' \
-             'channel.enableVibration(true)' 'channel.setVibrationPattern(VIBRATION)' \
-             '.setTimeoutAfter(RING_CAP_MS)' 'deleteNotificationChannel(RETIRED_CHANNEL_ID)'; do
+             'channel.enableVibration(false)' '.setTimeoutAfter(RING_CAP_MS)' \
+             '"fyodor_call_v1", "fyodor_call_v2"' 'manager.deleteNotificationChannel(retired)' \
+             'VibrationEffect.createWaveform(VIBRATION, 0)' 'CallState.endRingIfCurrent(token)' \
+             'MAIN.postDelayed(' 'long token = CallState.beginRing();'; do
   grep -qF "$token" "$CALL" && pass "call notification has $token" || fail "call notification missing $token"
 done
 if grep -Eq 'DeliveryLedger\.|[^a-zA-Z_]ack\(|ACK_API|getSharedPreferences\(' "$CALL" "$STATE"; then
@@ -75,6 +77,29 @@ else
   fail "call delta must be a void statement before the message early return"
 fi
 grep -qF 'ack(ctx, id);' "$SUPPORT" && pass "message ack path unchanged" || fail "message ack path changed"
+# Vibration is app-owned (a channel pattern plays once on ColorOS): the channel
+# never vibrates, SHOW starts a repeating Vibrator, every stop path cancels it.
+if grep -qF 'setVibrationPattern' "$CALL"; then
+  fail "the channel must not carry a vibration pattern (app-owned vibrator only)"
+else
+  pass "no channel vibration pattern: one vibration authority"
+fi
+SHOW_BODY=$(sed -n '/private static void show(Context ctx, String title)/,/^    }/p' "$CALL")
+grep -qF 'startVibrating(ctx);' <<<"$SHOW_BODY" \
+  && pass "showing the call starts the repeating vibration" || fail "show() must call startVibrating(ctx)"
+DELTA_BODY=$(sed -n '/public static void handleDelta(/,/^    }/p' "$CALL")
+if grep -qF 'stopRinging(ctx);' <<<"$DELTA_BODY" && ! grep -qF '.cancel(NOTIFICATION_ID)' <<<"$DELTA_BODY"; then
+  pass "a withdrawal stops notification and vibration together"
+else
+  fail "the CANCEL delta must go through stopRinging(ctx)"
+fi
+STOP_BODY=$(sed -n '/public static void stopRinging(Context ctx)/,/^    }/p' "$CALL")
+for need in '.cancel(NOTIFICATION_ID)' 'CallState.endRing();' 'vibrator.cancel();'; do
+  grep -qF "$need" <<<"$STOP_BODY" && pass "stopRinging does $need" || fail "stopRinging must do $need"
+done
+VIB_BODY=$(sed -n '/static void startVibrating(Context ctx)/,/^    }/p' "$CALL")
+grep -qF 'if (quiet(ctx))' <<<"$VIB_BODY" \
+  && pass "vibration honors silent mode and Do Not Disturb" || fail "startVibrating must skip when quiet(ctx)"
 # Insistent ringing must always end: a hard cap no longer than the server's
 # 60 s ring plus a little slack, and a tap on the notification stops it.
 CAP=$(sed -n -E 's/.*RING_CAP_MS = ([0-9_]+)L;.*/\1/p' "$CALL" | tr -d _ || true)

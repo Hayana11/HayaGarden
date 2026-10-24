@@ -21,6 +21,8 @@ public final class CallStateTest {
         withdrawalAdvancesTheFence();
         nullSnapshotChangesNothing();
         bothPollersShareOneKnownCall();
+        ringCapEndsOnlyItsOwnRing();
+        stoppingEndsTheRingAndDisarmsItsTimer();
         if (failures > 0) {
             System.exit(1);
         }
@@ -122,6 +124,27 @@ public final class CallStateTest {
         CallState.resetForTest();
         check(CallState.apply(null, true, "A1") == CallState.Action.NONE && known() == null,
                 "a response without a request snapshot applies nothing");
+    }
+
+    /** The 65 s cap timer of an old call must never stop the next call's vibration. */
+    static void ringCapEndsOnlyItsOwnRing() {
+        CallState.resetForTest();
+        long first = CallState.beginRing();
+        long second = CallState.beginRing();  // a new SHOW replaces the first ring
+        check(!CallState.endRingIfCurrent(first), "the first call's cap timer is stale once a second call rings");
+        check(CallState.endRingIfCurrent(second), "the second call's own cap timer stops it");
+        check(!CallState.endRingIfCurrent(second), "a cap timer fires at most once");
+    }
+
+    static void stoppingEndsTheRingAndDisarmsItsTimer() {
+        CallState.resetForTest();
+        long token = CallState.beginRing();
+        check(CallState.endRing(), "a withdrawal or tap ends the live ring");
+        check(!CallState.endRingIfCurrent(token), "its cap timer then does nothing");
+        long next = CallState.beginRing();
+        check(!CallState.endRingIfCurrent(token), "and cannot stop the next call either");
+        check(CallState.endRingIfCurrent(next), "the next call keeps its own cap");
+        check(!CallState.endRing(), "stopping when nothing rings is harmless");
     }
 
     /**
