@@ -57,6 +57,9 @@ class TelecomSpikeService : Service() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private val commands = Channel<String>(Channel.UNLIMITED)
     private var callJob: Job? = null
+    // Telecom state collectors. addCall returns only once every child of its scope has
+    // finished, and these flows never complete on their own, so they end with the call.
+    private var watchers: Job? = null
     private var recorder: Thread? = null
     @Volatile private var recording = false
     private var endpoints: List<CallEndpointCompat> = emptyList()
@@ -119,23 +122,27 @@ class TelecomSpikeService : Service() {
                     onDisconnect = { cause ->
                         log("telecom onDisconnect $cause")
                         stopRecording("telecom onDisconnect")
+                        stopWatchers("telecom onDisconnect")
                         commands.trySend(ACTION_ENDED)
                     },
                     onSetActive = { log("telecom onSetActive") },
                     onSetInactive = { log("telecom onSetInactive") },
                 ) {
                     log("addCall OK callId=${getCallId()}")
-                    launch { currentCallEndpoint.collect { log("currentCallEndpoint ${describe(it)}") } }
-                    launch {
-                        availableEndpoints.collect {
-                            endpoints = it
-                            log("availableEndpoints [${it.joinToString { e -> describe(e) }}]")
+                    watchers = launch {
+                        launch { currentCallEndpoint.collect { log("currentCallEndpoint ${describe(it)}") } }
+                        launch {
+                            availableEndpoints.collect {
+                                endpoints = it
+                                log("availableEndpoints [${it.joinToString { e -> describe(e) }}]")
+                            }
                         }
+                        launch { isMuted.collect { log("isMuted $it") } }
                     }
-                    launch { isMuted.collect { log("isMuted $it") } }
                     launch {
                         if (!incoming) goLive(setActive(), "setActive")
                         for (command in commands) if (!handle(command)) break
+                        log("command loop ended")
                     }
                 }
             } catch (e: CancellationException) {
@@ -170,7 +177,10 @@ class TelecomSpikeService : Service() {
                 val result = disconnect(DisconnectCause(cause))
                 log("disconnect result=$result elapsedMs=${SystemClock.elapsedRealtime() - hangupRequestedAt}")
                 // local media never waits on Telecom closing the call scope
-                if (result is CallControlResult.Success) stopRecording("disconnect succeeded")
+                if (result is CallControlResult.Success) {
+                    stopRecording("disconnect succeeded")
+                    stopWatchers("disconnect succeeded")
+                }
                 return false
             }
             ACTION_ENDED -> return false
@@ -326,6 +336,13 @@ class TelecomSpikeService : Service() {
         val manager = getSystemService(NotificationManager::class.java) ?: return
         manager.createNotificationChannel(
             NotificationChannel(CHANNEL_ID, "Telecom 探针", NotificationManager.IMPORTANCE_HIGH))
+    }
+
+    private fun stopWatchers(reason: String) {
+        val job = watchers ?: return
+        watchers = null
+        job.cancel()
+        log("state collectors cancelled ($reason)" + sinceHangup())
     }
 
     private fun stopRecording(reason: String) {

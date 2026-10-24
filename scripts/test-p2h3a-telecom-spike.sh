@@ -59,8 +59,15 @@ has 'log("disconnect requested cause=' "$SERVICE" \
   && pass "hang-up logged on arrival, at request and at result" || fail "hang-up stages not all logged"
 has 'if (answered) DisconnectCause.LOCAL else DisconnectCause.REJECTED' "$SERVICE" \
   && pass "unanswered calls are REJECTED, answered ones LOCAL" || fail "disconnect cause not chosen by call state"
-has 'if (result is CallControlResult.Success) stopRecording("disconnect succeeded")' "$SERVICE" \
-  && pass "recording stops right after a successful disconnect" || fail "recording waits on the call scope"
+python3 - "$SERVICE" <<'PY' && pass "recording stops right after a successful disconnect" || fail "recording waits on the call scope"
+import sys
+src = open(sys.argv[1]).read()
+i = src.index('if (result is CallControlResult.Success) {')
+assert src.index('stopRecording("disconnect succeeded")', i) < src.index('return false', i)
+PY
+has 'watchers = launch {' "$SERVICE" && has 'stopWatchers("disconnect succeeded")' "$SERVICE" \
+  && has 'stopWatchers("telecom onDisconnect")' "$SERVICE" \
+  && pass "Telecom state collectors end with the call (else addCall never returns)" || fail "state collectors outlive the call"
 has 'TEARDOWN_TIMEOUT_MS' "$SERVICE" && has 'callJob?.cancel()' "$SERVICE" && has 'finish("teardown watchdog")' "$SERVICE" \
   && pass "bounded teardown watchdog" || fail "no bounded teardown fallback"
 if grep -Eq 'Process\.killProcess|exitProcess|System\.exit' "$SERVICE"; then
