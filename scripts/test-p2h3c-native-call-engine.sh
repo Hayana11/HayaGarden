@@ -1,0 +1,162 @@
+#!/usr/bin/env bash
+# P2H-3C native call engine: source and generated-tree contract.
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+NATIVE="$ROOT/native"
+ANDROID_ROOT="${1:-}"
+ENGINE="$NATIVE/NativeCallEngine.kt"
+API="$NATIVE/NativeCallApi.kt"
+PROTOCOL="$NATIVE/NativeCallProtocol.java"
+PROBE="$NATIVE/NativeCallProbeActivity.kt"
+SOURCES=(NativeCallEngine.kt NativeCallApi.kt NativeCallProtocol.java NativeCallProbeActivity.kt)
+FAIL=0
+
+pass() { echo "PASS: $*"; }
+fail() { echo "FAIL: $*" >&2; FAIL=1; }
+has() { grep -qF -- "$1" "$2"; }
+code() { grep -Ev '^[[:space:]]*(\*|/\*|//)' "$@"; }
+
+for source in "${SOURCES[@]}"; do
+  [[ -f "$NATIVE/$source" ]] && pass "present native/$source" || fail "missing native/$source"
+done
+
+# Same protocol as the WebView runtime, on the fixed origin, URLs built in one place.
+tmp="$(mktemp -d)"
+trap 'rm -rf "$tmp"' EXIT
+javac -d "$tmp" "$PROTOCOL" "$NATIVE/CallAudioUrls.java" "$ROOT/scripts/jvm-tests/P2H3CNativeCallTest.java" \
+  && java -cp "$tmp" xyz.lovestyle.home.canary.P2H3CNativeCallTest \
+  && pass "protocol JVM tests (URLs, utterance chain, line queue, SSE)" || fail "protocol JVM tests"
+if code "$API" "$ENGINE" | grep -Eq '"https?://|love-style'; then
+  fail "the engine builds a URL outside NativeCallProtocol"
+else
+  pass "every URL comes from NativeCallProtocol"
+fi
+has 'CookieManager.getInstance().getCookie(CallAudioUrls.ORIGIN)' "$API" \
+  && pass "owner session is the WebView cookie, attached natively" || fail "cookie handling changed"
+
+# 3C boundary: not wired to CallScreen, the WebView runtime is untouched.
+if code "$ENGINE" "$API" "$PROBE" | grep -Eq 'JavascriptInterface|evaluateJavascript|WebView|VoiceBridge|CallAudioBridge'; then
+  fail "the engine reaches into the WebView call loop"
+else
+  pass "the engine stays out of the WebView call loop"
+fi
+if grep -Eq 'NativeCall' "$NATIVE/MainActivity.java" "$NATIVE/VoiceBridge.java" "$NATIVE/CallAudioBridge.java"; then
+  fail "the WebView side references the native engine (that is 3E)"
+else
+  pass "CallScreen's shell does not reference the native engine"
+fi
+
+# Telecom owns the lifecycle and the endpoint; the engine never routes through AudioManager.
+has 'manager.registerAppWithTelecom(CallsManager.CAPABILITY_BASELINE)' "$ENGINE" && has 'manager.addCall(' "$ENGINE" \
+  && pass "Core-Telecom call" || fail "Core-Telecom registration/addCall missing"
+has 'requestEndpointChange(target)' "$ENGINE" && has 'availableEndpoints.collect' "$ENGINE" && has 'currentCallEndpoint.collect' "$ENGINE" \
+  && pass "routing is Telecom endpoints" || fail "endpoint routing missing"
+if code "$ENGINE" | grep -Eq 'setMode\(|\.mode *=|setCommunicationDevice|clearCommunicationDevice|setSpeakerphoneOn|requestAudioFocus'; then
+  fail "the engine routes or takes focus through AudioManager"
+else
+  pass "no AudioManager routing, mode or focus in the engine"
+fi
+has 'ServiceInfo.FOREGROUND_SERVICE_TYPE_PHONE_CALL' "$ENGINE" && pass "phoneCall FGS type" || fail "phoneCall FGS type missing"
+if grep -Fq 'FOREGROUND_SERVICE_TYPE_MICROPHONE' "$ENGINE"; then fail "microphone FGS type"; else pass "phoneCall only"; fi
+has 'if (answered) DisconnectCause.LOCAL else DisconnectCause.REJECTED' "$ENGINE" && has 'DisconnectCause.REMOTE' "$ENGINE" \
+  && pass "REJECTED unanswered, LOCAL answered, REMOTE when the server ends it" || fail "disconnect causes"
+has 'api.ring(language)' "$ENGINE" && python3 - "$ENGINE" <<'PY' && pass "the server rings before Telecom carries the call" || fail "addCall before the server ring"
+import sys
+src = open(sys.argv[1]).read()
+begin = src[src.index('private fun begin('):src.index('private fun addCall(')]
+assert begin.index('api.ring(language)') < begin.index('main.post { addCall(id) }')
+PY
+
+# r3 lesson 1: watchers end with the call.
+has 'watchers = launch {' "$ENGINE" && has 'stopWatchers("disconnect succeeded")' "$ENGINE" \
+  && has 'stopWatchers("telecom onDisconnect")' "$ENGINE" \
+  && pass "Telecom state collectors end with the call" || fail "watchers outlive the call"
+
+# r3 lesson 2: local media cleanup never waits on the Telecom scope.
+python3 - "$ENGINE" <<'PY' && pass "media stops before disconnect() and on onDisconnect, without the scope" || fail "media cleanup waits on Telecom"
+import sys
+src = open(sys.argv[1]).read()
+d = src[src.index('private suspend fun CallControlScope.disconnectAs('):]
+d = d[:d.index('\n    }\n')]
+assert d.index('stopMedia(') < d.index('disconnect(DisconnectCause(cause))')
+assert 'stopMedia("telecom onDisconnect")' in src
+assert 'stopMedia("teardown watchdog")' in src
+stop = src[src.index('        fun stop(reason: String) {'):]
+stop = stop[:stop.index('\n        }\n')]
+for blocking in ('.join(', 'runBlocking', 'await', '.disconnect()\n'):
+    assert blocking not in stop.replace('cleanup.execute { open?.disconnect() }', ''), blocking
+PY
+has 'TEARDOWN_TIMEOUT_MS' "$ENGINE" && has 'callJob?.cancel()' "$ENGINE" && has 'finish("teardown watchdog")' "$ENGINE" \
+  && pass "bounded teardown watchdog" || fail "no bounded teardown"
+
+# r3 lesson 3: the main thread never joins the recording thread.
+if code "$ENGINE" | grep -Fq '.join('; then fail "the engine joins a thread"; else pass "no thread join in the engine"; fi
+python3 - "$ENGINE" <<'PY' && pass "the recorder is closed only on the cleanup executor" || fail "recorder closed outside the cleanup executor"
+import re, sys
+src = open(sys.argv[1]).read()
+closes = [m.start() for m in re.finditer(r'current\.close\(\)', src)]
+assert closes, 'no capture close'
+for at in closes:
+    opened = src.rfind('cleanup.execute {', 0, at)
+    assert opened >= 0 and '}' not in src[opened + len('cleanup.execute {'):at], 'close() outside cleanup.execute'
+assert 'capture?.stop()' not in src and '.stop() // capture' not in src
+PY
+if code "$ENGINE" | grep -Eq 'Process\.killProcess|exitProcess|System\.exit'; then fail "process kill"; else pass "no process kill"; fi
+
+# Barge-in and the utterance chain, as the page does it.
+has 'val prev = chain.start(seq)' "$ENGINE" && has 'api.interrupt(id, seq, prev)' "$ENGINE" \
+  && has 'api.hear(id, seq, prev, wav)' "$ENGINE" && has 'api.discard(id, seq, prev)' "$ENGINE" \
+  && pass "interrupt at speech_start, hear/discard with the prev fixed then" || fail "utterance protocol"
+has 'main.post { stopSpeaking() }' "$ENGINE" && pass "speech_start silences him" || fail "no barge-in"
+has '.setAudioAttributes(attributes, /* handleAudioFocus= */ false)' "$ENGINE" && has 'C.USAGE_VOICE_COMMUNICATION' "$ENGINE" \
+  && pass "his voice on the communication path, no focus handling" || fail "player attributes"
+
+# Permissions: asked only from the button that needs them.
+python3 - "$PROBE" <<'PY' && pass "mic and Nearby devices requested on demand only, never in onCreate" || fail "permission requests"
+import sys
+src = open(sys.argv[1]).read()
+create = src[src.index('override fun onCreate('):]
+create = create[:create.index('\n    }\n')]
+assert 'requestPermissions' not in create
+action = src[src.index('private fun onAction('):]
+action = action[:action.index('\n    }\n')]
+assert action.count('requestPermissions(') == 2 and src.count('requestPermissions(') == 2
+assert 'Manifest.permission.BLUETOOTH_CONNECT' in action and 'needsNearbyDevices()' in action
+assert 'Manifest.permission.RECORD_AUDIO' in action and 'starts &&' in action
+PY
+has 'log("Bluetooth skipped: Nearby devices not granted; the call stays on earpiece/speaker")' "$ENGINE" \
+  && has 'staying on the current earpiece/speaker endpoint' "$PROBE" \
+  && pass "Bluetooth denial degrades without ending the call" || fail "Bluetooth denial path"
+if code "$ENGINE" | grep -Fq 'requestPermissions'; then fail "the service requests permissions"; else pass "the service never requests permissions"; fi
+has 'const val TAG = "ElpisCallEngine"' "$ENGINE" && pass "logcat tag ElpisCallEngine" || fail "log tag"
+
+if [[ -n "$ANDROID_ROOT" ]]; then
+  MANIFEST="$ANDROID_ROOT/app/src/main/AndroidManifest.xml"
+  GRADLE="$ANDROID_ROOT/app/build.gradle"
+  GEN_JAVA="$ANDROID_ROOT/app/src/main/java/xyz/lovestyle/home/canary"
+  for permission in MANAGE_OWN_CALLS FOREGROUND_SERVICE_PHONE_CALL USE_FULL_SCREEN_INTENT RECORD_AUDIO; do
+    [[ "$(grep -Fc "android.permission.$permission\"" "$MANIFEST")" -eq 1 ]] \
+      && pass "$permission declared once" || fail "$permission declaration count is not one"
+  done
+  if grep -Eq 'android.permission.(CALL_PHONE|READ_PHONE_STATE|FOREGROUND_SERVICE_MICROPHONE)"' "$MANIFEST"; then
+    fail "SIM telephony or microphone FGS permission declared"
+  else
+    pass "no SIM telephony or microphone FGS permission"
+  fi
+  grep -Fq 'android:name=".NativeCallEngine"' "$MANIFEST" && grep -Fq 'android:foregroundServiceType="phoneCall"' "$MANIFEST" \
+    && pass "engine service declared as phoneCall" || fail "engine service declaration"
+  [[ "$(grep -Ec 'androidx\.core:core-telecom:' "$GRADLE")" -eq 1 ]] && grep -Fq 'androidx.core:core-telecom:1.1.0-rc01' "$GRADLE" \
+    && pass "core-telecom 1.1.0-rc01 appears once" || fail "core-telecom dependency contract"
+  [[ "$(grep -Ec '^[[:space:]]*compileSdkMinor[[:space:]]*=[[:space:]]*1' "$GRADLE")" -eq 1 ]] \
+    && pass "compileSdkMinor = 1" || fail "compileSdkMinor missing or duplicated"
+  for source in "${SOURCES[@]}"; do
+    cmp -s "$NATIVE/$source" "$GEN_JAVA/$source" && pass "generated $source matches native/" || fail "generated $source missing or stale"
+  done
+fi
+
+if [[ $FAIL -ne 0 ]]; then
+  echo "P2H-3C native call engine contract test FAILED" >&2
+  exit 1
+fi
+echo "P2H-3C native call engine contract test PASSED"

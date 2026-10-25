@@ -76,10 +76,13 @@ else
   pass "worker is display-only"
 fi
 # P2D (owner-approved 2026-10-23) owns the push service, its starter and boot
-# receiver; they carry their own contract in test-p2d-push.sh. Everything else
-# stays service- and receiver-free.
-P2D_OWNED='/(PushService|PushSupport|PushBootReceiver)\.java$'
-if ls "$NATIVE"/*.java | grep -vE "$P2D_OWNED" \
+# receiver; they carry their own contract in test-p2d-push.sh. The P2H-3C native
+# call engine (owner-approved 2026-10-24 decision report, 3C go-ahead 2026-10-25)
+# owns its phoneCall service and the acceptance screen that starts it; contract:
+# test-p2h3c-native-call-engine.sh. Everything else, Java or Kotlin, stays
+# service- and receiver-free.
+P2D_OWNED='/(PushService|PushSupport|PushBootReceiver)\.java$|/(NativeCallEngine|NativeCallProbeActivity)\.kt$'
+if ls "$NATIVE"/*.java "$NATIVE"/*.kt | grep -vE "$P2D_OWNED" \
     | xargs grep -E 'ForegroundService|startForegroundService|startService\(|BootReceiver'; then
   fail "custom native source contains forbidden service or receiver"
 else
@@ -104,7 +107,9 @@ if [[ -f "$MANIFEST" ]]; then
   done
   # FOREGROUND_SERVICE, FOREGROUND_SERVICE_REMOTE_MESSAGING and RECEIVE_BOOT_COMPLETED belong to P2D;
   # RECORD_AUDIO belongs to P2E (owner-approved 2026-10-23, contract: test-p2e-speech.sh).
-  if grep -Eq 'android.permission.(FOREGROUND_SERVICE_(DATA_SYNC|LOCATION|MEDIA_PROJECTION|CAMERA|MICROPHONE|PHONE_CALL)|ACCESS_.*LOCATION|CAMERA)"' "$MANIFEST"; then
+  # FOREGROUND_SERVICE_PHONE_CALL belongs to P2H-3C (owner-approved 2026-10-24 decision
+  # report: phoneCall FGS + MANAGE_OWN_CALLS; contract: test-p2h3c-native-call-engine.sh).
+  if grep -Eq 'android.permission.(FOREGROUND_SERVICE_(DATA_SYNC|LOCATION|MEDIA_PROJECTION|CAMERA|MICROPHONE)|ACCESS_.*LOCATION|CAMERA)"' "$MANIFEST"; then
     fail "manifest contains forbidden permission"
   else
     pass "manifest has no forbidden permission"

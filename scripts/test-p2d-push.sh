@@ -87,7 +87,9 @@ grep -qF 'canPostNotifications' "$STARTER" && grep -qF 'startForegroundService' 
   && pass "service start is gated on notification permission" || fail "PushSupport must gate the start on canPostNotifications"
 grep -qF 'PushSupport.ensureRunning(ctx);' "$SUPPORT" \
   && pass "NotificationSupport starts the push service" || fail "NotificationSupport.ensurePollingScheduled must call PushSupport.ensureRunning"
-if grep -lE 'startForegroundService|startService\(' "$NATIVE"/*.java | grep -vqx "$STARTER"; then
+# The P2H-3C native call engine (owner-approved 2026-10-24) starts its own phoneCall service.
+if grep -lE 'startForegroundService|startService\(' "$NATIVE"/*.java "$NATIVE"/*.kt \
+    | grep -vx "$STARTER" | grep -vqx "$NATIVE/NativeCallEngine.kt"; then
   fail "only PushSupport may start a service"
 else
   pass "PushSupport is the only service starter"
