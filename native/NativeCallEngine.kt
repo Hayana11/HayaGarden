@@ -122,7 +122,9 @@ class NativeCallEngine : Service() {
         }
         when (action) {
             ACTION_DIAL, ACTION_TEST_RING -> begin(action == ACTION_TEST_RING, intent.getStringExtra(EXTRA_LANGUAGE), startId)
-            else -> dispatch(action, intent.getIntExtra(EXTRA_GENERATION, 0), startId)
+            // a notification action names its call twice: in its identity (data URI) and its extras
+            else -> dispatch(action, NativeCallProtocol.actionGeneration(
+                intent.dataString, action, intent.getIntExtra(EXTRA_GENERATION, 0)), startId)
         }
         return START_NOT_STICKY
     }
@@ -656,9 +658,13 @@ class NativeCallEngine : Service() {
         return builder.build()
     }
 
+    /** Its own token per call: the generation is in the identity (data URI), not only the extras. */
     private fun command(r: Run, action: String, code: Int): PendingIntent =
         PendingIntent.getService(this, code,
-            Intent(this, NativeCallEngine::class.java).setAction(action).putExtra(EXTRA_GENERATION, r.gen),
+            Intent(this, NativeCallEngine::class.java)
+                .setAction(action)
+                .setData(Uri.parse(NativeCallProtocol.actionUri(r.gen, action)))
+                .putExtra(EXTRA_GENERATION, r.gen),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
 
     private fun createChannel() {

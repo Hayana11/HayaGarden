@@ -67,6 +67,38 @@ public final class NativeCallProtocol {
         return CallAudioUrls.audioUrl(callId, seq);
     }
 
+    private static final String ACTION_URI = "hayagarden:call-action/";
+
+    /**
+     * A notification action's identity: its call's generation and the action, as the
+     * Intent data. PendingIntents are matched by Intent.filterEquals, which compares
+     * data but not extras, so each call gets its own tokens: FLAG_UPDATE_CURRENT for
+     * a new call can never rewrite an old call's button (it would also replace that
+     * button's extras). Extras alone would not do.
+     */
+    public static String actionUri(int gen, String action) {
+        if (gen <= 0 || action == null || action.isEmpty()) return null;
+        return ACTION_URI + gen + "/" + action;
+    }
+
+    /**
+     * The generation a received action names, checked twice: its data URI must be
+     * actionUri(gen, action) and its extra must say the same gen. No data (the
+     * acceptance screen's own buttons) returns extraGen as it is; any mismatch or
+     * malformed URI returns -1, which no call matches.
+     */
+    public static int actionGeneration(String data, String action, int extraGen) {
+        if (data == null) return extraGen;
+        if (extraGen <= 0 || action == null || !data.startsWith(ACTION_URI)) return -1;
+        String rest = data.substring(ACTION_URI.length());
+        int slash = rest.indexOf('/');
+        if (slash <= 0 || !rest.substring(slash + 1).equals(action)) return -1;
+        String digits = rest.substring(0, slash);
+        if (!digits.matches("^[1-9][0-9]{0,8}$")) return -1;
+        int gen = Integer.parseInt(digits);
+        return gen == extraGen ? gen : -1;
+    }
+
     private static String callUrl(String callId, String path) {
         return CallAudioUrls.validCallId(callId) ? API + "/" + callId + path : null;
     }

@@ -10,6 +10,7 @@ public final class P2H3CNativeCallTest {
         chain();
         lines();
         sse();
+        actionIdentity();
         System.out.println("P2H-3C native call JVM tests passed");
     }
 
@@ -81,6 +82,28 @@ public final class P2H3CNativeCallTest {
         parser.feed("data: {\"state\":\"ended\",\"after\":4}");
         event = parser.feed("");
         check(event != null && "state".equals(event.name), "state event");
+    }
+
+    /** Each call's notification buttons are distinct PendingIntents, and a received action is checked twice. */
+    private static void actionIdentity() {
+        String hangup = "elpis.call_engine.HANGUP";
+        String answer = "elpis.call_engine.ANSWER";
+        String a = NativeCallProtocol.actionUri(1, hangup);
+        String b = NativeCallProtocol.actionUri(2, hangup);
+        check("hayagarden:call-action/1/elpis.call_engine.HANGUP".equals(a), "action uri");
+        check(!a.equals(b), "call A's and call B's hangup tokens must differ (filterEquals compares data)");
+        check(!a.equals(NativeCallProtocol.actionUri(1, answer)), "hangup and answer tokens differ");
+        check(NativeCallProtocol.actionUri(0, hangup) == null, "generation 0 has no token");
+        check(NativeCallProtocol.actionGeneration(a, hangup, 1) == 1, "own token, own extra");
+        // even if call B's FLAG_UPDATE_CURRENT had rewritten the extras, A's data still says gen 1
+        check(NativeCallProtocol.actionGeneration(a, hangup, 2) == -1, "data and extra disagree: rejected");
+        check(NativeCallProtocol.actionGeneration(a, answer, 1) == -1, "token of another action: rejected");
+        check(NativeCallProtocol.actionGeneration("hayagarden:call-action/x/" + hangup, hangup, 1) == -1, "malformed gen");
+        check(NativeCallProtocol.actionGeneration("hayagarden:call-action/01/" + hangup, hangup, 1) == -1, "padded gen");
+        check(NativeCallProtocol.actionGeneration("https://evil/1/" + hangup, hangup, 1) == -1, "foreign uri");
+        check(NativeCallProtocol.actionGeneration(a, hangup, 0) == -1, "token without extra");
+        check(NativeCallProtocol.actionGeneration(null, hangup, 0) == 0, "probe button: no data, current call");
+        check(NativeCallProtocol.actionGeneration(null, hangup, 3) == 3, "no data: extra as is");
     }
 
     private static void check(boolean condition, String message) {

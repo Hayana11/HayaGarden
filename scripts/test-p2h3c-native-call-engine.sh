@@ -95,7 +95,11 @@ a = body('private fun answerOnServer(')
 assert a.count('if (gate.isCurrent(r.gen)) r.commands.trySend(') == 2
 f = body('private fun finish(r: Run, reason: String)')
 assert f.split('{', 1)[1].lstrip().startswith('if (!gate.finish(r.gen)) return') and 'r.commands.close()' in f
-assert 'putExtra(EXTRA_GENERATION, r.gen)' in body('private fun command(')
+cmd = body('private fun command(')
+assert '.setData(Uri.parse(NativeCallProtocol.actionUri(r.gen, action)))' in cmd and 'putExtra(EXTRA_GENERATION, r.gen)' in cmd
+start = body('override fun onStartCommand(')
+assert 'NativeCallProtocol.actionGeneration(' in start and 'intent.dataString' in start
+assert src.count('PendingIntent.getService(') == 1, 'another service PendingIntent without the generation identity'
 disp = body('private fun dispatch(')
 assert 'val r = ownOrStop(startId)' in disp and 'gen != 0 && gen != r.gen' in disp
 assert 'gate.isCurrent(it.gen)' in body('private fun ownOrStop(')
