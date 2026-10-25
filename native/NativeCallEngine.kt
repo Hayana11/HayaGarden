@@ -11,7 +11,9 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
 import android.media.AudioDeviceInfo
+import android.media.AudioFormat
 import android.media.AudioManager
+import android.media.AudioTrack
 import android.net.Uri
 import android.os.Build
 import android.os.Handler
@@ -158,7 +160,59 @@ class NativeCallEngine : Service() {
             else log("$action ignored while the call is starting")
             return
         }
+        if (action == ACTION_RAW_TONE) {
+            rawTone(r)
+            return
+        }
         r.commands.trySend(action)
+    }
+
+    /**
+     * P2H-3D r3 diagnostic (probe button only): inside the same Telecom call, a bare
+     * AudioTrack with the voice-communication usage and the speaker as preferred
+     * device plays a short 440 Hz tone, bypassing Media3. Reno16 #201: Telecom,
+     * commDevice and devicesForVoiceComm all said speaker, our ExoPlayer track still
+     * sounded from the earpiece. Earpiece here too: ColorOS audio policy under a
+     * Telecom-managed call. Speaker here: Media3's audio sink. Never touches the route.
+     */
+    private fun rawTone(r: Run) {
+        val rate = 16_000
+        val samples = ShortArray(rate * RAW_TONE_MS / 1000) { i ->
+            (Math.sin(2 * Math.PI * 440 * i / rate) * Short.MAX_VALUE * 0.3).toInt().toShort()
+        }
+        val track = try {
+            AudioTrack.Builder()
+                .setAudioAttributes(VOICE_ATTRIBUTES)
+                .setAudioFormat(AudioFormat.Builder()
+                    .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
+                    .setSampleRate(rate)
+                    .setChannelMask(AudioFormat.CHANNEL_OUT_MONO)
+                    .build())
+                .setTransferMode(AudioTrack.MODE_STATIC)
+                .setBufferSizeInBytes(samples.size * 2)
+                .build()
+        } catch (e: Exception) {
+            log("raw tone FAILED to build: $e")
+            return
+        }
+        val speaker = getSystemService(AudioManager::class.java)
+            ?.getDevices(AudioManager.GET_DEVICES_OUTPUTS)
+            ?.firstOrNull { it.type == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER }
+        val accepted = speaker != null && track.setPreferredDevice(speaker)
+        track.write(samples, 0, samples.size)
+        track.play()
+        log("raw tone playing: session=${track.audioSessionId} preferred=${speaker?.let(::deviceName) ?: "none"} " +
+            "accepted=$accepted telecom=${r.endpointName}")
+        routeReport(r, "raw tone")
+        main.postDelayed({
+            log("raw tone +500ms: routedDevice=${track.routedDevice?.let(::deviceName) ?: "unknown"} " +
+                "preferred=${track.preferredDevice?.let(::deviceName) ?: "none"} state=${track.playState}")
+            routeReport(r, "raw tone+500ms")
+        }, 500)
+        main.postDelayed({
+            track.release()
+            log("raw tone released")
+        }, RAW_TONE_MS + 300L)
     }
 
     /** Ring through the server first, so Telecom only ever carries a call that exists there. */
@@ -847,6 +901,9 @@ class NativeCallEngine : Service() {
         const val ACTION_EARPIECE = "elpis.call_engine.EARPIECE"
         const val ACTION_SPEAKER = "elpis.call_engine.SPEAKER"
         const val ACTION_BLUETOOTH = "elpis.call_engine.BLUETOOTH"
+        /** Probe-only diagnostic: a bare AudioTrack tone in the live call, no Media3. */
+        const val ACTION_RAW_TONE = "elpis.call_engine.RAW_TONE"
+        private const val RAW_TONE_MS = 2_500
         private const val ACTION_SYSTEM_ANSWERED = "elpis.call_engine.SYSTEM_ANSWERED"
         private const val ACTION_SERVER_ANSWERED = "elpis.call_engine.SERVER_ANSWERED"
         private const val ACTION_REMOTE_ENDED = "elpis.call_engine.REMOTE_ENDED"

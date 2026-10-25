@@ -233,6 +233,17 @@ assert 'current.setPreferredAudioDevice(device)' in pin
 for route_write in ('setCommunicationDevice', 'setSpeakerphoneOn', 'setMode', 'requestEndpointChange'):
     assert route_write not in pin, route_write
 assert 'pinTrack = pinView.isChecked' in probe
+# r3 diagnostic: a bare AudioTrack tone, only from the probe button, inside the current call
+tone = src[src.index('private fun rawTone(r: Run) {'):]
+tone = tone[:tone.index('\n    }\n')]
+assert '.setAudioAttributes(VOICE_ATTRIBUTES)' in tone and 'track.setPreferredDevice(speaker)' in tone
+assert 'track.release()' in tone and 'routeReport(r, "raw tone+500ms")' in tone
+for route_write in ('setCommunicationDevice', 'setSpeakerphoneOn', 'setMode', 'requestEndpointChange', 'ExoPlayer'):
+    assert route_write not in tone, route_write
+d = src[src.index('private fun dispatch('):]
+d = d[:d.index('\n    }\n')]
+assert d.index('val r = ownOrStop(startId)') < d.index('if (action == ACTION_RAW_TONE) {') < d.index('r.commands.trySend(action)')
+assert 'NativeCallEngine.ACTION_RAW_TONE' in probe
 PY
 has '.setAudioAttributes(attributes, /* handleAudioFocus= */ false)' "$ENGINE" && has 'C.USAGE_VOICE_COMMUNICATION' "$ENGINE" \
   && pass "his voice on the communication path, no focus handling" || fail "player attributes"
