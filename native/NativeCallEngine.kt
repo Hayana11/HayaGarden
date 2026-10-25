@@ -508,7 +508,7 @@ class NativeCallEngine : Service() {
 
         fun clearAppRoute(reason: String) = appRoute.clear(reason)
 
-        /** P2H-3D r5 diagnostic: the raw tone plays while the recorder (VOIP_TX + AEC) is released. */
+        /** P2H-3D r5 diagnostic: holds route ownership fixed (Telecom) and removes active capture (VOIP_TX + AEC) for one tone. */
         private var micPaused = false
         private var micResume: Runnable? = null
 
@@ -1004,7 +1004,7 @@ class NativeCallEngine : Service() {
         const val ACTION_APP_ROUTE_SPEAKER = "elpis.call_engine.APP_ROUTE_SPEAKER"
         /** P2H-3D r5 diagnostic (probe button only): raw tone with the recorder released. */
         const val ACTION_MIC_PAUSE_TONE = "elpis.call_engine.MIC_PAUSE_TONE"
-        private const val MIC_PAUSE_MS = 5_000L
+        private const val MIC_PAUSE_MS = 3_000L
         private const val ACTION_SYSTEM_ANSWERED = "elpis.call_engine.SYSTEM_ANSWERED"
         private const val ACTION_SERVER_ANSWERED = "elpis.call_engine.SERVER_ANSWERED"
         private const val ACTION_REMOTE_ENDED = "elpis.call_engine.REMOTE_ENDED"

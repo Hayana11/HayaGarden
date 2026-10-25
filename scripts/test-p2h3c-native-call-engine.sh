@@ -309,8 +309,9 @@ assert 'NativeCallEngine.ACTION_APP_ROUTE_SPEAKER' in probe
 begin = src[src.index('private fun begin('):src.index('private fun addCall(')]
 assert 'AppRouteProbe' not in begin and 'appRoute' not in begin
 PY
-# P2H-3D r5 diagnostic: VOIP_TX + AEC vs Telecom ownership. The recorder is released (on the
-# cleanup lane) only from its probe button, the tone waits for the release, and the mic always comes back.
+# P2H-3D r5 diagnostic: route ownership held at Telecom, active capture (VOIP_TX + AEC) removed for one
+# tone. The recorder is released on the cleanup lane only from its probe button, the tone waits for the
+# release, and capture always comes back.
 python3 - "$ENGINE" "$PROBE" <<'PY' && pass "mic pause probe is button-only, tone after release, recorder restored" || fail "mic pause probe contract"
 import sys
 src = open(sys.argv[1]).read()
@@ -337,7 +338,9 @@ d = src[src.index('private fun dispatch('):]
 d = d[:d.index('\n    }\n')]
 assert d.index('val r = ownOrStop(startId)') < d.index('if (action == ACTION_MIC_PAUSE_TONE) {') < d.index('r.commands.trySend(action)')
 assert 'NativeCallEngine.ACTION_MIC_PAUSE_TONE' in probe
-assert int(src.split('MIC_PAUSE_MS = ', 1)[1].split('L', 1)[0].replace('_', '')) <= 10000
+pause_ms = int(src.split('MIC_PAUSE_MS = ', 1)[1].split('L', 1)[0].replace('_', ''))
+raw_ms = int(src.split('RAW_TONE_MS = ', 1)[1].split('\n', 1)[0].replace('_', ''))
+assert raw_ms <= pause_ms <= 3000, 'the 2.5 s tone must fit inside a pause of at most 3 s'
 PY
 has '.setAudioAttributes(attributes, /* handleAudioFocus= */ false)' "$ENGINE" && has 'C.USAGE_VOICE_COMMUNICATION' "$ENGINE" \
   && pass "his voice on the communication path, no focus handling" || fail "player attributes"
