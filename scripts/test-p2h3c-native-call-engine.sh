@@ -9,7 +9,7 @@ ENGINE="$NATIVE/NativeCallEngine.kt"
 API="$NATIVE/NativeCallApi.kt"
 PROTOCOL="$NATIVE/NativeCallProtocol.java"
 PROBE="$NATIVE/NativeCallProbeActivity.kt"
-SOURCES=(NativeCallEngine.kt NativeCallApi.kt NativeCallProtocol.java CallRunGate.java NativeCallProbeActivity.kt)
+SOURCES=(NativeCallEngine.kt NativeCallApi.kt NativeCallProtocol.java CallRunGate.java CallStartIds.java NativeCallProbeActivity.kt)
 FAIL=0
 
 pass() { echo "PASS: $*"; }
@@ -97,8 +97,30 @@ f = body('private fun finish(r: Run, reason: String)')
 assert f.split('{', 1)[1].lstrip().startswith('if (!gate.finish(r.gen)) return') and 'r.commands.close()' in f
 assert 'putExtra(EXTRA_GENERATION, r.gen)' in body('private fun command(')
 disp = body('private fun dispatch(')
-assert '!gate.isCurrent(r.gen)' in disp and 'gen != 0 && gen != r.gen' in disp
+assert 'val r = ownOrStop(startId)' in disp and 'gen != 0 && gen != r.gen' in disp
+assert 'gate.isCurrent(it.gen)' in body('private fun ownOrStop(')
 assert re.search(r'\bcommands\.trySend', src.replace('r.commands.trySend', '').replace('owner.commands.trySend', '')) is None
+PY
+
+# Start-id ownership (review P1, 2026-10-25): an ended call stops the service only with
+# the start requests it owns, never a service-wide latest id, so a redial survives.
+javac -d "$tmp" "$NATIVE/CallStartIds.java" "$ROOT/scripts/jvm-tests/P2H3CCallStartIdsTest.java" \
+  && java -cp "$tmp" xyz.lovestyle.home.canary.P2H3CCallStartIdsTest \
+  && pass "start ids: redial survives the old finish, no idle service after a call" || fail "call start ids JVM tests"
+python3 - "$ENGINE" <<'PY' && pass "stopSelf only with the call's own start ids" || fail "stopSelf ownership"
+import re, sys
+src = open(sys.argv[1]).read()
+code = '\n'.join(l for l in src.splitlines() if not l.strip().startswith(('*', '//', '/*')))
+assert not re.search(r'(lastStartId|latestStartId)', code), 'a service-wide start id'
+stops = [code[m.end():m.end() + 20] for m in re.finditer(r'stopSelf\(', code)]
+assert len(stops) == 2 and sum(x.startswith('startId)') for x in stops) == 1 \
+    and sum(x.startswith('r.starts.stopId())') for x in stops) == 1, stops
+assert 'val starts = CallStartIds(startId)' in src
+own = src[src.index('private fun ownOrStop('):]
+own = own[:own.index('\n    }\n')]
+assert 'if (r != null) r.starts.own(startId) else stopSelf(startId)' in own
+assert 'ownOrStop(startId)' in src[src.index('private fun begin('):src.index('val r = Run(gen, asIncoming, startId)')]
+assert 'val r = ownOrStop(startId)' in src[src.index('private fun dispatch('):]
 PY
 
 # r3 lesson 1: watchers end with the call.

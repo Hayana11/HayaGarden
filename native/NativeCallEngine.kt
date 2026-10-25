@@ -91,10 +91,11 @@ class NativeCallEngine : Service() {
     /** One call at a time; every command and async callback is checked against its generation. */
     private val gate = CallRunGate()
     private var run: Run? = null
-    private var lastStartId = 0
 
     /** Everything that belongs to one call: an old call's leftovers can never reach the next one. */
-    private inner class Run(val gen: Int, val incoming: Boolean) {
+    private inner class Run(val gen: Int, val incoming: Boolean, startId: Int) {
+        /** The start requests this call owns; finish stops the service only with these. */
+        val starts = CallStartIds(startId)
         val commands = Channel<String>(Channel.UNLIMITED)
         var callId: String? = null
         var callJob: Job? = null
@@ -114,22 +115,35 @@ class NativeCallEngine : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        lastStartId = startId
-        val action = intent?.action ?: return START_NOT_STICKY
+        val action = intent?.action
+        if (action == null) {
+            ownOrStop(startId)
+            return START_NOT_STICKY
+        }
         when (action) {
-            ACTION_DIAL, ACTION_TEST_RING -> begin(action == ACTION_TEST_RING, intent.getStringExtra(EXTRA_LANGUAGE))
-            else -> dispatch(action, intent.getIntExtra(EXTRA_GENERATION, 0))
+            ACTION_DIAL, ACTION_TEST_RING -> begin(action == ACTION_TEST_RING, intent.getStringExtra(EXTRA_LANGUAGE), startId)
+            else -> dispatch(action, intent.getIntExtra(EXTRA_GENERATION, 0), startId)
         }
         return START_NOT_STICKY
     }
 
+    /**
+     * A start request that opens no run belongs to the current run, so that run's
+     * finish covers it; with no current run it is stopped right away (stopSelf with
+     * its own id, which never stops a newer request).
+     */
+    private fun ownOrStop(startId: Int): Run? {
+        val r = run?.takeIf { gate.isCurrent(it.gen) }
+        if (r != null) r.starts.own(startId) else stopSelf(startId)
+        return r
+    }
+
     /** A command for the current call; a notification action names its call's generation. */
-    private fun dispatch(action: String, gen: Int) {
-        val r = run
+    private fun dispatch(action: String, gen: Int, startId: Int) {
         if (action == ACTION_HANGUP) log("hangup command received (phase=${gate.phase()})")
-        if (r == null || !gate.isCurrent(r.gen) || (gen != 0 && gen != r.gen)) {
+        val r = ownOrStop(startId)
+        if (r == null || (gen != 0 && gen != r.gen)) {
             log("$action ignored: not for the current call (gen=$gen, current=${gate.generation()} ${gate.phase()})")
-            if (r == null) stopSelf(lastStartId)  // a late tap must not leave an idle service behind
             return
         }
         if (r.callJob == null) {
@@ -142,13 +156,14 @@ class NativeCallEngine : Service() {
     }
 
     /** Ring through the server first, so Telecom only ever carries a call that exists there. */
-    private fun begin(asIncoming: Boolean, language: String?) {
+    private fun begin(asIncoming: Boolean, language: String?, startId: Int) {
         val gen = gate.tryStart()
         if (gen == 0) {
+            ownOrStop(startId)  // the refused tap is covered by the current call's finish
             log("${if (asIncoming) "test ring" else "dial"} ignored: a call is already ${gate.phase()}")
             return
         }
-        val r = Run(gen, asIncoming)
+        val r = Run(gen, asIncoming, startId)
         run = r
         createChannel()
         if (!promote(notification(r))) {
@@ -666,7 +681,7 @@ class NativeCallEngine : Service() {
         publish(state = "ended")
         stopForeground(STOP_FOREGROUND_REMOVE)
         log("stopForeground done")
-        stopSelf(lastStartId)  // a newer start (an immediate redial) keeps the service
+        stopSelf(r.starts.stopId())  // only this call's own requests: a redial is newer and keeps the service
     }
 
     override fun onDestroy() {

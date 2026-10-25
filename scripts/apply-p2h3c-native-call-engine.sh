@@ -12,7 +12,7 @@ NATIVE="$ROOT/native"
 DEST_DIR="$ROOT/android/app/src/main/java/xyz/lovestyle/home/canary"
 MANIFEST="$ROOT/android/app/src/main/AndroidManifest.xml"
 GRADLE="$ROOT/android/app/build.gradle"
-SOURCES=(NativeCallEngine.kt NativeCallApi.kt NativeCallProtocol.java CallRunGate.java NativeCallProbeActivity.kt)
+SOURCES=(NativeCallEngine.kt NativeCallApi.kt NativeCallProtocol.java CallRunGate.java CallStartIds.java NativeCallProbeActivity.kt)
 
 for required in "${SOURCES[@]}"; do
   [[ -f "$NATIVE/$required" ]] || { echo "missing $NATIVE/$required" >&2; exit 1; }
