@@ -9,6 +9,7 @@ ENGINE="$NATIVE/NativeCallEngine.kt"
 API="$NATIVE/NativeCallApi.kt"
 PROTOCOL="$NATIVE/NativeCallProtocol.java"
 PROBE="$NATIVE/NativeCallProbeActivity.kt"
+DIAGNOSE="$ROOT/scripts/diagnose-p2h3d-audio.sh"
 SOURCES=(NativeCallEngine.kt NativeCallApi.kt NativeCallProtocol.java CallRunGate.java CallStartIds.java CallLanes.java NativeCallProbeActivity.kt)
 FAIL=0
 
@@ -195,6 +196,44 @@ assert 'readTimeout = INTERRUPT_TIMEOUT_MS' in interrupt and 'connectTimeout = I
 assert int(re.search(r'INTERRUPT_TIMEOUT_MS = ([0-9_]+)', api).group(1).replace('_', '')) <= 5000
 order = int(re.search(r'ORDER_WAIT_MS = ([0-9_]+)L', src).group(1).replace('_', ''))
 assert 5000 <= order <= 10000, 'hear must outwait the interrupt timeout, but only just'
+PY
+
+# P2H-3D diagnostics: the dumpsys snapshot is synchronized to the raw tone marker,
+# and the diagnostic track is owned by Media teardown.
+python3 - "$ENGINE" "$DIAGNOSE" <<'PY' && pass "raw tone lifecycle and marker-synchronized concurrent dumpsys contract" || fail "raw tone lifecycle / dumpsys contract"
+import sys
+src = open(sys.argv[1]).read()
+diag = open(sys.argv[2]).read()
+media = src[src.index('private inner class Media'):]
+
+assert 'private var rawTrack: AudioTrack? = null' in media
+assert 'private var rawToneReport: Runnable? = null' in media
+assert 'private var rawToneRelease: Runnable? = null' in media
+assert 'fun playRawTone()' in media
+assert 'stopRawTone("replaced")' in media
+assert 'rawTrack = track' in media
+assert 'rawTrack !== track' in media
+assert 'private fun stopRawTone(reason: String)' in media
+assert 'track.stop()' in media and 'track.release()' in media
+
+stop = media[media.index('fun stop(reason: String) {'):]
+stop = stop[:stop.index('\n        }\n')]
+assert 'stopRawTone("media stop")' in stop
+assert stop.index('stopRawTone("media stop")') < stop.index('stopReplyWatch()')
+
+dispatch = src[src.index('private fun dispatch('):]
+dispatch = dispatch[:dispatch.index('\n    }\n')]
+assert 'r.media?.playRawTone() ?: log("raw tone ignored: media is not active")' in dispatch
+assert 'private fun rawTone' not in src
+
+assert 'adb logcat -c' in diag
+assert 'adb logcat -v threadtime -s ElpisCallEngine:I' in diag
+assert 'raw tone playing:' in diag
+assert 'sleep 0.1' in diag
+assert 'sleep 0.5' not in diag
+assert 'adb shell dumpsys "$name" > "$file" 2>&1 &' in diag
+assert 'wait "${pids[$i]}"' in diag
+assert diag.index('read -r') < diag.index('while ! grep') < diag.index('for name in audio telecom media.audio_flinger')
 PY
 
 # Reply wait: parity with the WebView's P2F path (capture never closes, nothing cut off);
