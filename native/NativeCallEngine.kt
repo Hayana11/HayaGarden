@@ -161,58 +161,10 @@ class NativeCallEngine : Service() {
             return
         }
         if (action == ACTION_RAW_TONE) {
-            rawTone(r)
+            r.media?.playRawTone() ?: log("raw tone ignored: media is not active")
             return
         }
         r.commands.trySend(action)
-    }
-
-    /**
-     * P2H-3D r3 diagnostic (probe button only): inside the same Telecom call, a bare
-     * AudioTrack with the voice-communication usage and the speaker as preferred
-     * device plays a short 440 Hz tone, bypassing Media3. Reno16 #201: Telecom,
-     * commDevice and devicesForVoiceComm all said speaker, our ExoPlayer track still
-     * sounded from the earpiece. Earpiece here too: ColorOS audio policy under a
-     * Telecom-managed call. Speaker here: Media3's audio sink. Never touches the route.
-     */
-    private fun rawTone(r: Run) {
-        val rate = 16_000
-        val samples = ShortArray(rate * RAW_TONE_MS / 1000) { i ->
-            (Math.sin(2 * Math.PI * 440 * i / rate) * Short.MAX_VALUE * 0.3).toInt().toShort()
-        }
-        val track = try {
-            AudioTrack.Builder()
-                .setAudioAttributes(VOICE_ATTRIBUTES)
-                .setAudioFormat(AudioFormat.Builder()
-                    .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
-                    .setSampleRate(rate)
-                    .setChannelMask(AudioFormat.CHANNEL_OUT_MONO)
-                    .build())
-                .setTransferMode(AudioTrack.MODE_STATIC)
-                .setBufferSizeInBytes(samples.size * 2)
-                .build()
-        } catch (e: Exception) {
-            log("raw tone FAILED to build: $e")
-            return
-        }
-        val speaker = getSystemService(AudioManager::class.java)
-            ?.getDevices(AudioManager.GET_DEVICES_OUTPUTS)
-            ?.firstOrNull { it.type == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER }
-        val accepted = speaker != null && track.setPreferredDevice(speaker)
-        track.write(samples, 0, samples.size)
-        track.play()
-        log("raw tone playing: session=${track.audioSessionId} preferred=${speaker?.let(::deviceName) ?: "none"} " +
-            "accepted=$accepted telecom=${r.endpointName}")
-        routeReport(r, "raw tone")
-        main.postDelayed({
-            log("raw tone +500ms: routedDevice=${track.routedDevice?.let(::deviceName) ?: "unknown"} " +
-                "preferred=${track.preferredDevice?.let(::deviceName) ?: "none"} state=${track.playState}")
-            routeReport(r, "raw tone+500ms")
-        }, 500)
-        main.postDelayed({
-            track.release()
-            log("raw tone released")
-        }, RAW_TONE_MS + 300L)
     }
 
     /** Ring through the server first, so Telecom only ever carries a call that exists there. */
@@ -528,6 +480,86 @@ class NativeCallEngine : Service() {
         private var stream: Thread? = null
         @Volatile private var connection: HttpURLConnection? = null
         private var muted = false
+        /** The diagnostic track belongs to this call's media and dies with it. */
+        private var rawTrack: AudioTrack? = null
+        private var rawToneReport: Runnable? = null
+        private var rawToneRelease: Runnable? = null
+
+        /**
+         * P2H-3D r3 diagnostic: a bare 440 Hz AudioTrack using the same
+         * voice-communication attributes as the call, with only its own
+         * preferred speaker device set. Repeated taps replace the previous tone.
+         */
+        fun playRawTone() {
+            stopRawTone("replaced")
+            val rate = 16_000
+            val samples = ShortArray(rate * RAW_TONE_MS / 1000) { i ->
+                (Math.sin(2 * Math.PI * 440 * i / rate) * Short.MAX_VALUE * 0.3).toInt().toShort()
+            }
+            val track = try {
+                AudioTrack.Builder()
+                    .setAudioAttributes(VOICE_ATTRIBUTES)
+                    .setAudioFormat(AudioFormat.Builder()
+                        .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
+                        .setSampleRate(rate)
+                        .setChannelMask(AudioFormat.CHANNEL_OUT_MONO)
+                        .build())
+                    .setTransferMode(AudioTrack.MODE_STATIC)
+                    .setBufferSizeInBytes(samples.size * 2)
+                    .build()
+            } catch (e: Exception) {
+                log("raw tone FAILED to build: $e")
+                return
+            }
+            val speaker = getSystemService(AudioManager::class.java)
+                ?.getDevices(AudioManager.GET_DEVICES_OUTPUTS)
+                ?.firstOrNull { it.type == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER }
+            val accepted = speaker != null && track.setPreferredDevice(speaker)
+            try {
+                track.write(samples, 0, samples.size)
+                track.play()
+            } catch (e: Exception) {
+                track.release()
+                log("raw tone FAILED to play: $e")
+                return
+            }
+            rawTrack = track
+            log("raw tone playing: session=${track.audioSessionId} preferred=${speaker?.let(::deviceName) ?: "none"} " +
+                "accepted=${accepted} telecom=${owner.endpointName}")
+            routeReport(owner, "raw tone")
+
+            val report = Runnable {
+                if (!live || rawTrack !== track) return@Runnable
+                log("raw tone +500ms: routedDevice=${track.routedDevice?.let(::deviceName) ?: "unknown"} " +
+                    "preferred=${track.preferredDevice?.let(::deviceName) ?: "none"} state=${track.playState}")
+                routeReport(owner, "raw tone+500ms")
+            }
+            rawToneReport = report
+            main.postDelayed(report, 500)
+
+            val release = Runnable {
+                if (rawTrack === track) stopRawTone("completed")
+            }
+            rawToneRelease = release
+            main.postDelayed(release, RAW_TONE_MS + 300L)
+        }
+
+        private fun stopRawTone(reason: String) {
+            val track = rawTrack ?: return
+            rawTrack = null
+            rawToneReport?.let { main.removeCallbacks(it) }
+            rawToneRelease?.let { main.removeCallbacks(it) }
+            rawToneReport = null
+            rawToneRelease = null
+            try {
+                track.stop()
+            } catch (e: IllegalStateException) {
+                log("raw tone stop failed ($reason): $e")
+            } finally {
+                track.release()
+                log("raw tone released ($reason)")
+            }
+        }
 
         fun start() {
             stream = Thread(::readStream, "elpis-call-stream").apply { start() }
@@ -564,6 +596,7 @@ class NativeCallEngine : Service() {
             if (!live) return
             live = false
             log("media stop ($reason)")
+            stopRawTone("media stop")
             stopReplyWatch()
             queue.clear()
             playing = 0
