@@ -91,7 +91,10 @@ class NativeCallEngine : Service() {
     private var run: Run? = null
 
     /** Everything that belongs to one call: an old call's leftovers can never reach the next one. */
-    private inner class Run(val gen: Int, val incoming: Boolean, startId: Int, val legacy: Boolean) {
+    private inner class Run(val gen: Int, val incoming: Boolean, startId: Int, val legacy: Boolean,
+                            val pinTrack: Boolean) {
+        /** Telecom's current endpoint type (CallEndpointCompat.TYPE_*), 0 until reported. */
+        var endpointType = 0
         /** Telecom's current endpoint as last reported, for the route telemetry. */
         var endpointName = "-"
         /** The start requests this call owns; finish stops the service only with these. */
@@ -122,7 +125,7 @@ class NativeCallEngine : Service() {
         }
         when (action) {
             ACTION_DIAL, ACTION_TEST_RING -> begin(action == ACTION_TEST_RING, intent.getStringExtra(EXTRA_LANGUAGE), startId,
-                intent.getBooleanExtra(EXTRA_LEGACY_TELECOM, false))
+                intent.getBooleanExtra(EXTRA_LEGACY_TELECOM, false), intent.getBooleanExtra(EXTRA_PIN_TRACK, false))
             // a notification action names its call twice: in its identity (data URI) and its extras
             else -> dispatch(action, NativeCallProtocol.actionGeneration(
                 intent.dataString, action, intent.getIntExtra(EXTRA_GENERATION, 0)), startId)
@@ -159,14 +162,14 @@ class NativeCallEngine : Service() {
     }
 
     /** Ring through the server first, so Telecom only ever carries a call that exists there. */
-    private fun begin(asIncoming: Boolean, language: String?, startId: Int, legacy: Boolean) {
+    private fun begin(asIncoming: Boolean, language: String?, startId: Int, legacy: Boolean, pinTrack: Boolean) {
         val gen = gate.tryStart()
         if (gen == 0) {
             ownOrStop(startId)  // the refused tap is covered by the current call's finish
             log("${if (asIncoming) "test ring" else "dial"} ignored: a call is already ${gate.phase()}")
             return
         }
-        val r = Run(gen, asIncoming, startId, legacy)
+        val r = Run(gen, asIncoming, startId, legacy, pinTrack)
         run = r
         createChannel()
         if (!promote(notification(r))) {
@@ -244,6 +247,8 @@ class NativeCallEngine : Service() {
                         launch {
                             currentCallEndpoint.collect {
                                 r.endpointName = describe(it)
+                                r.endpointType = it.type
+                                r.media?.followEndpoint()
                                 publish(route = r.endpointName)
                                 routeReport(r, "endpoint")
                                 main.postDelayed({ if (gate.isCurrent(r.gen)) routeReport(r, "endpoint+${ROUTE_SETTLE_MS}ms") }, ROUTE_SETTLE_MS)
@@ -385,7 +390,7 @@ class NativeCallEngine : Service() {
     private fun routeReport(r: Run, moment: String) {
         val audio = getSystemService(AudioManager::class.java) ?: return
         val parts = mutableListOf("route[$moment]", "telecom=${r.endpointName}",
-            "path=${if (r.legacy) "legacy" else "modern"}", "mode=${audio.mode}")
+            "path=${if (r.legacy) "legacy" else "modern"}", "pin=${r.pinTrack}", "mode=${audio.mode}")
         @Suppress("DEPRECATION")
         parts += "speakerphoneOn=${audio.isSpeakerphoneOn}"
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
@@ -696,7 +701,33 @@ class NativeCallEngine : Service() {
                 }
             })
             player = created
+            followEndpoint()
             return created
+        }
+
+        /**
+         * P2H-3D r2 experiment (probe switch, off by default): pin our own playback track
+         * to the device of Telecom's current endpoint (AudioTrack.setPreferredDevice via
+         * Media3). Not a second route owner: the system route, communication device and
+         * speakerphone are never touched; Telecom decides, the track only follows it.
+         * Reno16 #200: Telecom, commDevice and devicesForVoiceComm all said speaker,
+         * playback device=unknown, sound from the earpiece, modern and legacy alike.
+         */
+        fun followEndpoint() {
+            if (!owner.pinTrack || !live) return
+            val current = player ?: return
+            val wanted = when (owner.endpointType) {
+                CallEndpointCompat.TYPE_SPEAKER -> intArrayOf(AudioDeviceInfo.TYPE_BUILTIN_SPEAKER)
+                CallEndpointCompat.TYPE_EARPIECE -> intArrayOf(AudioDeviceInfo.TYPE_BUILTIN_EARPIECE)
+                CallEndpointCompat.TYPE_BLUETOOTH -> intArrayOf(AudioDeviceInfo.TYPE_BLUETOOTH_SCO, AudioDeviceInfo.TYPE_BLE_HEADSET)
+                CallEndpointCompat.TYPE_WIRED_HEADSET -> intArrayOf(AudioDeviceInfo.TYPE_WIRED_HEADSET, AudioDeviceInfo.TYPE_USB_HEADSET)
+                else -> return
+            }
+            val audio = getSystemService(AudioManager::class.java) ?: return
+            val device = audio.getDevices(AudioManager.GET_DEVICES_OUTPUTS).firstOrNull { it.type in wanted }
+            current.setPreferredAudioDevice(device)
+            log("track pinned to ${device?.let(::deviceName) ?: "default (no ${typeName(owner.endpointType)} output)"} " +
+                "for telecom=${owner.endpointName}")
         }
 
         private fun done(failed: Boolean, code: String? = null) {
@@ -802,6 +833,8 @@ class NativeCallEngine : Service() {
         const val EXTRA_GENERATION = "generation"
         /** Probe-only A/B: register through Core-Telecom's legacy ConnectionService path. */
         const val EXTRA_LEGACY_TELECOM = "legacy_telecom"
+        /** Probe-only experiment: pin the playback track to Telecom's endpoint device. */
+        const val EXTRA_PIN_TRACK = "pin_track"
         private const val ROUTE_SETTLE_MS = 800L
         private val VOICE_ATTRIBUTES: android.media.AudioAttributes = android.media.AudioAttributes.Builder()
             .setUsage(android.media.AudioAttributes.USAGE_VOICE_COMMUNICATION)
@@ -851,10 +884,12 @@ class NativeCallEngine : Service() {
 
         fun snapshot(): String = synchronized(logLines) { logLines.joinToString("\n") }
 
-        fun send(context: Context, action: String, language: String? = null, legacyTelecom: Boolean = false) {
+        fun send(context: Context, action: String, language: String? = null, legacyTelecom: Boolean = false,
+                 pinTrack: Boolean = false) {
             val intent = Intent(context, NativeCallEngine::class.java).setAction(action)
             if (language != null) intent.putExtra(EXTRA_LANGUAGE, language)
             if (legacyTelecom) intent.putExtra(EXTRA_LEGACY_TELECOM, true)
+            if (pinTrack) intent.putExtra(EXTRA_PIN_TRACK, true)
             if (action == ACTION_DIAL || action == ACTION_TEST_RING) {
                 context.startForegroundService(intent)
             } else {

@@ -123,7 +123,7 @@ assert 'val starts = CallStartIds(startId)' in src
 own = src[src.index('private fun ownOrStop('):]
 own = own[:own.index('\n    }\n')]
 assert 'if (r != null) r.starts.own(startId) else stopSelf(startId)' in own
-assert 'ownOrStop(startId)' in src[src.index('private fun begin('):src.index('val r = Run(gen, asIncoming, startId, legacy)')]
+assert 'ownOrStop(startId)' in src[src.index('private fun begin('):src.index('val r = Run(gen, asIncoming, startId, legacy, pinTrack)')]
 assert 'val r = ownOrStop(startId)' in src[src.index('private fun dispatch('):]
 PY
 
@@ -225,6 +225,14 @@ for moment in ('routeReport(r, "live")', 'routeReport(r, "endpoint")', 'routeRep
 assert 'manager.registerAppWithTelecom(CallsManager.CAPABILITY_BASELINE, Build.VERSION.SDK_INT)' in src
 assert src.index('if (r.legacy) {') < src.index('CAPABILITY_BASELINE, Build.VERSION.SDK_INT')
 assert 'legacyTelecom = legacyView.isChecked' in probe
+# r2 experiment: the track follows Telecom's endpoint, only on the probe switch, only on our own track
+pin = src[src.index('fun followEndpoint() {'):]
+pin = pin[:pin.index('\n        }\n')]
+assert pin.split('{', 1)[1].lstrip().startswith('if (!owner.pinTrack || !live) return')
+assert 'current.setPreferredAudioDevice(device)' in pin
+for route_write in ('setCommunicationDevice', 'setSpeakerphoneOn', 'setMode', 'requestEndpointChange'):
+    assert route_write not in pin, route_write
+assert 'pinTrack = pinView.isChecked' in probe
 PY
 has '.setAudioAttributes(attributes, /* handleAudioFocus= */ false)' "$ENGINE" && has 'C.USAGE_VOICE_COMMUNICATION' "$ENGINE" \
   && pass "his voice on the communication path, no focus handling" || fail "player attributes"

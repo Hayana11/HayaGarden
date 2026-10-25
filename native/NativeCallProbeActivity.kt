@@ -28,6 +28,7 @@ class NativeCallProbeActivity : Activity() {
     private lateinit var logView: TextView
     private lateinit var languageView: EditText
     private lateinit var legacyView: CheckBox
+    private lateinit var pinView: CheckBox
     private var pendingStart: String? = null
     private val refresh = object : Runnable {
         override fun run() {
@@ -53,6 +54,9 @@ class NativeCallProbeActivity : Activity() {
         // P2H-3D A/B: the same call through Core-Telecom's legacy ConnectionService path
         legacyView = CheckBox(this).apply { text = "A/B：Telecom 走 legacy ConnectionService" }
         root.addView(legacyView)
+        // P2H-3D r2 experiment: the playback track follows Telecom's endpoint device
+        pinView = CheckBox(this).apply { text = "实验：播放轨跟随 Telecom endpoint（setPreferredDevice）" }
+        root.addView(pinView)
         val buttons = listOf(
             "拨给费佳" to NativeCallEngine.ACTION_DIAL,
             "测试来电" to NativeCallEngine.ACTION_TEST_RING,
@@ -97,7 +101,8 @@ class NativeCallProbeActivity : Activity() {
 
     private fun send(action: String) {
         val language = languageView.text.toString().trim().ifEmpty { null }
-        NativeCallEngine.send(this, action, language, legacyTelecom = legacyView.isChecked)
+        NativeCallEngine.send(this, action, language, legacyTelecom = legacyView.isChecked,
+            pinTrack = pinView.isChecked)
     }
 
     private fun needsNearbyDevices(): Boolean =
