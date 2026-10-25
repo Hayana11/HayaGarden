@@ -164,6 +164,10 @@ class NativeCallEngine : Service() {
             r.media?.playRawTone() ?: log("raw tone ignored: media is not active")
             return
         }
+        if (action == ACTION_MIC_PAUSE_TONE) {
+            r.media?.pauseMicWithTone() ?: log("mic pause probe ignored: media is not active")
+            return
+        }
         if (action == ACTION_APP_ROUTE_SPEAKER) {
             r.media?.appRouteSpeaker() ?: log("app route probe ignored: media is not active")
             return
@@ -504,6 +508,36 @@ class NativeCallEngine : Service() {
 
         fun clearAppRoute(reason: String) = appRoute.clear(reason)
 
+        /** P2H-3D r5 diagnostic: the raw tone plays while the recorder (VOIP_TX + AEC) is released. */
+        private var micPaused = false
+        private var micResume: Runnable? = null
+
+        fun pauseMicWithTone() {
+            if (!live || muted || micPaused) {
+                log("mic pause probe ignored: live=$live muted=$muted paused=$micPaused")
+                return
+            }
+            micPaused = true
+            log("mic pause probe: releasing the recorder for ${MIC_PAUSE_MS / 1000}s")
+            closeCapture {
+                if (!live || !micPaused) return@closeCapture
+                routeReport(owner, "mic paused")
+                playRawTone()
+            }
+            val resume = Runnable { resumeMic("timer") }
+            micResume = resume
+            main.postDelayed(resume, MIC_PAUSE_MS)
+        }
+
+        private fun resumeMic(reason: String) {
+            if (!micPaused) return
+            micPaused = false
+            micResume?.let { main.removeCallbacks(it) }
+            micResume = null
+            log("mic pause probe: recorder back ($reason)")
+            startCapture()
+        }
+
         /**
          * P2H-3D r3 diagnostic: a bare 440 Hz AudioTrack using the same
          * voice-communication attributes as the call, with only its own
@@ -586,7 +620,7 @@ class NativeCallEngine : Service() {
         }
 
         private fun startCapture() {
-            if (!live || muted || capture != null) return
+            if (!live || muted || micPaused || capture != null) return
             if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
                 log("capture skipped: RECORD_AUDIO not granted (allow the mic in the probe first)")
                 return
@@ -601,12 +635,18 @@ class NativeCallEngine : Service() {
             if (on) closeCapture() else startCapture()
         }
 
-        private fun closeCapture() {
-            val current = capture ?: return
+        /** [then] runs on the main thread once the recorder is released. */
+        private fun closeCapture(then: (() -> Unit)? = null) {
+            val current = capture
+            if (current == null) {
+                then?.let { f -> main.post { f() } }
+                return
+            }
             capture = null
             lanes.cleanup {
                 current.close()
                 log("capture closed")
+                then?.let { f -> main.post { f() } }
             }
         }
 
@@ -617,6 +657,9 @@ class NativeCallEngine : Service() {
             log("media stop ($reason)")
             stopRawTone("media stop")
             appRoute.clear("media stop")
+            micResume?.let { main.removeCallbacks(it) }
+            micResume = null
+            micPaused = false
             stopReplyWatch()
             queue.clear()
             playing = 0
@@ -959,6 +1002,9 @@ class NativeCallEngine : Service() {
         private const val RAW_TONE_MS = 2_500
         /** P2H-3D r4 diagnostic (probe button only): the app itself requests the speaker. */
         const val ACTION_APP_ROUTE_SPEAKER = "elpis.call_engine.APP_ROUTE_SPEAKER"
+        /** P2H-3D r5 diagnostic (probe button only): raw tone with the recorder released. */
+        const val ACTION_MIC_PAUSE_TONE = "elpis.call_engine.MIC_PAUSE_TONE"
+        private const val MIC_PAUSE_MS = 5_000L
         private const val ACTION_SYSTEM_ANSWERED = "elpis.call_engine.SYSTEM_ANSWERED"
         private const val ACTION_SERVER_ANSWERED = "elpis.call_engine.SERVER_ANSWERED"
         private const val ACTION_REMOTE_ENDED = "elpis.call_engine.REMOTE_ENDED"
