@@ -28,8 +28,10 @@ class NativeCallApi {
 
     fun hangup(callId: String): JSONObject = post(need(NativeCallProtocol.hangupUrl(callId)))
 
+    /** Barge-in: short timeout, so a stalled server never holds the barge-in lane for long. */
     fun interrupt(callId: String, seq: Int, prev: Int?) {
-        post(need(NativeCallProtocol.interruptUrl(callId, seq, prev)))
+        post(need(NativeCallProtocol.interruptUrl(callId, seq, prev)), readTimeout = INTERRUPT_TIMEOUT_MS,
+            connectTimeout = INTERRUPT_TIMEOUT_MS)
     }
 
     /** One utterance (WAV PCM16); returns the server's result (her line, or stale/duplicate). */
@@ -55,8 +57,8 @@ class NativeCallApi {
     fun cookie(): String? = CookieManager.getInstance().getCookie(CallAudioUrls.ORIGIN)
 
     private fun post(url: String, body: ByteArray? = null, type: String = "application/json",
-                     readTimeout: Int = READ_TIMEOUT_MS): JSONObject {
-        val connection = open(url, "POST", readTimeout)
+                     readTimeout: Int = READ_TIMEOUT_MS, connectTimeout: Int = CONNECT_TIMEOUT_MS): JSONObject {
+        val connection = open(url, "POST", readTimeout, connectTimeout)
         try {
             connection.doOutput = true
             connection.setRequestProperty("Content-Type", type)
@@ -74,11 +76,12 @@ class NativeCallApi {
         }
     }
 
-    private fun open(url: String, method: String, readTimeout: Int): HttpURLConnection {
+    private fun open(url: String, method: String, readTimeout: Int,
+                     connectTimeout: Int = CONNECT_TIMEOUT_MS): HttpURLConnection {
         val connection = URL(url).openConnection() as HttpURLConnection
         connection.requestMethod = method
         connection.instanceFollowRedirects = false
-        connection.connectTimeout = CONNECT_TIMEOUT_MS
+        connection.connectTimeout = connectTimeout
         connection.readTimeout = readTimeout
         cookie()?.takeIf { it.isNotEmpty() }?.let { connection.setRequestProperty("Cookie", it) }
         return connection
@@ -89,6 +92,7 @@ class NativeCallApi {
     companion object {
         private const val CONNECT_TIMEOUT_MS = 10_000
         private const val READ_TIMEOUT_MS = 20_000
+        const val INTERRUPT_TIMEOUT_MS = 5_000
         private const val HEAR_TIMEOUT_MS = 60_000
         // the server holds a stream window open ~25s, then sends its state and closes
         private const val STREAM_READ_TIMEOUT_MS = 60_000

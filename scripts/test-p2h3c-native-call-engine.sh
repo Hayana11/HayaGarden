@@ -9,7 +9,7 @@ ENGINE="$NATIVE/NativeCallEngine.kt"
 API="$NATIVE/NativeCallApi.kt"
 PROTOCOL="$NATIVE/NativeCallProtocol.java"
 PROBE="$NATIVE/NativeCallProbeActivity.kt"
-SOURCES=(NativeCallEngine.kt NativeCallApi.kt NativeCallProtocol.java CallRunGate.java CallStartIds.java NativeCallProbeActivity.kt)
+SOURCES=(NativeCallEngine.kt NativeCallApi.kt NativeCallProtocol.java CallRunGate.java CallStartIds.java CallLanes.java NativeCallProbeActivity.kt)
 FAIL=0
 
 pass() { echo "PASS: $*"; }
@@ -123,7 +123,7 @@ assert 'val starts = CallStartIds(startId)' in src
 own = src[src.index('private fun ownOrStop('):]
 own = own[:own.index('\n    }\n')]
 assert 'if (r != null) r.starts.own(startId) else stopSelf(startId)' in own
-assert 'ownOrStop(startId)' in src[src.index('private fun begin('):src.index('val r = Run(gen, asIncoming, startId)')]
+assert 'ownOrStop(startId)' in src[src.index('private fun begin('):src.index('val r = Run(gen, asIncoming, startId, legacy)')]
 assert 'val r = ownOrStop(startId)' in src[src.index('private fun dispatch('):]
 PY
 
@@ -144,7 +144,7 @@ assert 'stopMedia(r, "teardown watchdog")' in src
 stop = src[src.index('        fun stop(reason: String) {'):]
 stop = stop[:stop.index('\n        }\n')]
 for blocking in ('.join(', 'runBlocking', 'await', '.disconnect()\n'):
-    assert blocking not in stop.replace('cleanup.execute { open?.disconnect() }', ''), blocking
+    assert blocking not in stop.replace('lanes.cleanup { open?.disconnect() }', ''), blocking
 PY
 has 'TEARDOWN_TIMEOUT_MS' "$ENGINE" && has 'r.callJob?.cancel()' "$ENGINE" && has 'finish(r, "teardown watchdog")' "$ENGINE" \
   && pass "bounded teardown watchdog" || fail "no bounded teardown"
@@ -157,8 +157,8 @@ src = open(sys.argv[1]).read()
 closes = [m.start() for m in re.finditer(r'current\.close\(\)', src)]
 assert closes, 'no capture close'
 for at in closes:
-    opened = src.rfind('cleanup.execute {', 0, at)
-    assert opened >= 0 and '}' not in src[opened + len('cleanup.execute {'):at], 'close() outside cleanup.execute'
+    opened = src.rfind('lanes.cleanup {', 0, at)
+    assert opened >= 0 and '}' not in src[opened + len('lanes.cleanup {'):at], 'close() outside the cleanup lane'
 assert 'capture?.stop()' not in src and '.stop() // capture' not in src
 PY
 if code "$ENGINE" | grep -Eq 'Process\.killProcess|exitProcess|System\.exit'; then fail "process kill"; else pass "no process kill"; fi
@@ -167,7 +167,65 @@ if code "$ENGINE" | grep -Eq 'Process\.killProcess|exitProcess|System\.exit'; th
 has 'val prev = chain.start(seq)' "$ENGINE" && has 'api.interrupt(id, seq, prev)' "$ENGINE" \
   && has 'api.hear(id, seq, prev, wav)' "$ENGINE" && has 'api.discard(id, seq, prev)' "$ENGINE" \
   && pass "interrupt at speech_start, hear/discard with the prev fixed then" || fail "utterance protocol"
-has 'main.post { stopSpeaking() }' "$ENGINE" && pass "speech_start silences him" || fail "no barge-in"
+has 'main.post { stopSpeaking(); stopReplyWatch() }' "$ENGINE" && pass "speech_start silences him" || fail "no barge-in"
+
+# P2H-3D lanes (Reno16 2026-10-25: one /interrupt held the shared control thread 20 s,
+# and hear 4 reached the server before interrupt 4).
+javac -d "$tmp" "$NATIVE/CallLanes.java" "$ROOT/scripts/jvm-tests/P2H3DCallLanesTest.java" \
+  && java -cp "$tmp" xyz.lovestyle.home.canary.P2H3DCallLanesTest \
+  && pass "lanes: a stuck interrupt never delays answer/hangup; interrupt N before hear N, bounded" \
+  || fail "call lanes JVM tests"
+python3 - "$ENGINE" "$API" <<'PY' && pass "each request rides its own lane; barge-in has a short timeout" || fail "request lanes"
+import re, sys
+src = open(sys.argv[1]).read()
+api = open(sys.argv[2]).read()
+assert 'Executors.' not in src and 'ExecutorService' not in src, 'an executor outside CallLanes'
+def lane_of(call):
+    at = src.index(call)
+    return max(('lanes.lifecycle {', 'lanes.interrupt(', 'lanes.utterance(', 'lanes.cleanup {'),
+               key=lambda lane: src.rfind(lane, 0, at))
+for call in ('api.ring(language)', 'api.answer(id).also', 'api.answer(id)\n', 'api.hangup(id)'):
+    assert lane_of(call) == 'lanes.lifecycle {', call
+assert lane_of('api.interrupt(id, seq, prev)') == 'lanes.interrupt(', 'interrupt'
+assert lane_of('api.hear(id, seq, prev, wav)') == 'lanes.utterance(', 'hear'
+assert lane_of('api.discard(id, seq, prev)') == 'lanes.utterance(', 'discard'
+interrupt = api[api.index('fun interrupt('):]
+interrupt = interrupt[:interrupt.index('\n    }\n')]
+assert 'readTimeout = INTERRUPT_TIMEOUT_MS' in interrupt and 'connectTimeout = INTERRUPT_TIMEOUT_MS' in interrupt
+assert int(re.search(r'INTERRUPT_TIMEOUT_MS = ([0-9_]+)', api).group(1).replace('_', '')) <= 5000
+order = int(re.search(r'ORDER_WAIT_MS = ([0-9_]+)L', src).group(1).replace('_', ''))
+assert 5000 <= order <= 10000, 'hear must outwait the interrupt timeout, but only just'
+PY
+
+# Reply wait: parity with the WebView's P2F path (capture never closes, nothing cut off);
+# a reply slower than the WebView's 45 s is logged as a diagnostic, never acted on.
+python3 - "$ENGINE" <<'PY' && pass "45 s reply diagnostic is log-only" || fail "reply diagnostic"
+import re, sys
+src = open(sys.argv[1]).read()
+assert re.search(r'REPLY_DIAGNOSTIC_MS = 45_000L', src)
+late = src[src.index('private val replyLate = Runnable {'):]
+late = late[:late.index('\n        }\n')]
+for action in ('commands', 'hangup', 'interrupt', 'closeCapture', 'stop(', 'disconnect'):
+    assert action not in late, action
+PY
+
+# Route telemetry (read only) and the Core-Telecom modern/legacy A/B (probe only).
+python3 - "$ENGINE" "$PROBE" <<'PY' && pass "route telemetry is read only; legacy Telecom path only on the probe's A/B switch" || fail "route telemetry / A/B"
+import sys
+src = open(sys.argv[1]).read()
+probe = open(sys.argv[2]).read()
+report = src[src.index('private fun routeReport('):]
+report = report[:report.index('\n    }\n')]
+for read in ('audio.mode', 'audio.communicationDevice', 'getAudioDevicesForAttributes(VOICE_ATTRIBUTES)',
+             'activePlaybackConfigurations', 'volumeControlStream', 'config.audioDeviceInfo'):
+    assert read in report, read
+for moment in ('routeReport(r, "live")', 'routeReport(r, "endpoint")', 'routeReport(owner, "before player")',
+               'routeReport(owner, "playing $seq")'):
+    assert moment in src, moment
+assert 'manager.registerAppWithTelecom(CallsManager.CAPABILITY_BASELINE, Build.VERSION.SDK_INT)' in src
+assert src.index('if (r.legacy) {') < src.index('CAPABILITY_BASELINE, Build.VERSION.SDK_INT')
+assert 'legacyTelecom = legacyView.isChecked' in probe
+PY
 has '.setAudioAttributes(attributes, /* handleAudioFocus= */ false)' "$ENGINE" && has 'C.USAGE_VOICE_COMMUNICATION' "$ENGINE" \
   && pass "his voice on the communication path, no focus handling" || fail "player attributes"
 

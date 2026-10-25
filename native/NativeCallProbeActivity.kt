@@ -9,6 +9,7 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.widget.Button
+import android.widget.CheckBox
 import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.ScrollView
@@ -26,6 +27,7 @@ class NativeCallProbeActivity : Activity() {
     private lateinit var summaryView: TextView
     private lateinit var logView: TextView
     private lateinit var languageView: EditText
+    private lateinit var legacyView: CheckBox
     private var pendingStart: String? = null
     private val refresh = object : Runnable {
         override fun run() {
@@ -48,6 +50,9 @@ class NativeCallProbeActivity : Activity() {
             setSingleLine()
         }
         root.addView(languageView)
+        // P2H-3D A/B: the same call through Core-Telecom's legacy ConnectionService path
+        legacyView = CheckBox(this).apply { text = "A/B：Telecom 走 legacy ConnectionService" }
+        root.addView(legacyView)
         val buttons = listOf(
             "拨给费佳" to NativeCallEngine.ACTION_DIAL,
             "测试来电" to NativeCallEngine.ACTION_TEST_RING,
@@ -92,7 +97,7 @@ class NativeCallProbeActivity : Activity() {
 
     private fun send(action: String) {
         val language = languageView.text.toString().trim().ifEmpty { null }
-        NativeCallEngine.send(this, action, language)
+        NativeCallEngine.send(this, action, language, legacyTelecom = legacyView.isChecked)
     }
 
     private fun needsNearbyDevices(): Boolean =

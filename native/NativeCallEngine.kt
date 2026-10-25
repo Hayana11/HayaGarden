@@ -10,6 +10,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
+import android.media.AudioDeviceInfo
 import android.media.AudioManager
 import android.net.Uri
 import android.os.Build
@@ -41,8 +42,6 @@ import java.text.SimpleDateFormat
 import java.util.ArrayDeque
 import java.util.Date
 import java.util.Locale
-import java.util.concurrent.ExecutorService
-import java.util.concurrent.Executors
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -81,19 +80,20 @@ class NativeCallEngine : Service() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private val main = Handler(Looper.getMainLooper())
     private val api = NativeCallApi()
-    /** Control requests (ring/answer/hangup/interrupt/discard), in order. */
-    private val control: ExecutorService = Executors.newSingleThreadExecutor { Thread(it, "elpis-call-control") }
-    /** Her utterances to Scribe; separate so a slow upload never delays a barge-in. */
-    private val uploads: ExecutorService = Executors.newSingleThreadExecutor { Thread(it, "elpis-call-upload") }
-    /** Closing the recorder joins its thread: done here, never on the main thread. */
-    private val cleanup: ExecutorService = Executors.newSingleThreadExecutor { Thread(it, "elpis-call-cleanup") }
+    /**
+     * Request lanes (P2H-3D): lifecycle (ring/answer/hangup) never waits behind a
+     * barge-in or an upload; hear/discard N waits, bounded, for interrupt N.
+     */
+    private val lanes = CallLanes(ORDER_WAIT_MS)
 
     /** One call at a time; every command and async callback is checked against its generation. */
     private val gate = CallRunGate()
     private var run: Run? = null
 
     /** Everything that belongs to one call: an old call's leftovers can never reach the next one. */
-    private inner class Run(val gen: Int, val incoming: Boolean, startId: Int) {
+    private inner class Run(val gen: Int, val incoming: Boolean, startId: Int, val legacy: Boolean) {
+        /** Telecom's current endpoint as last reported, for the route telemetry. */
+        var endpointName = "-"
         /** The start requests this call owns; finish stops the service only with these. */
         val starts = CallStartIds(startId)
         val commands = Channel<String>(Channel.UNLIMITED)
@@ -121,7 +121,8 @@ class NativeCallEngine : Service() {
             return START_NOT_STICKY
         }
         when (action) {
-            ACTION_DIAL, ACTION_TEST_RING -> begin(action == ACTION_TEST_RING, intent.getStringExtra(EXTRA_LANGUAGE), startId)
+            ACTION_DIAL, ACTION_TEST_RING -> begin(action == ACTION_TEST_RING, intent.getStringExtra(EXTRA_LANGUAGE), startId,
+                intent.getBooleanExtra(EXTRA_LEGACY_TELECOM, false))
             // a notification action names its call twice: in its identity (data URI) and its extras
             else -> dispatch(action, NativeCallProtocol.actionGeneration(
                 intent.dataString, action, intent.getIntExtra(EXTRA_GENERATION, 0)), startId)
@@ -158,14 +159,14 @@ class NativeCallEngine : Service() {
     }
 
     /** Ring through the server first, so Telecom only ever carries a call that exists there. */
-    private fun begin(asIncoming: Boolean, language: String?, startId: Int) {
+    private fun begin(asIncoming: Boolean, language: String?, startId: Int, legacy: Boolean) {
         val gen = gate.tryStart()
         if (gen == 0) {
             ownOrStop(startId)  // the refused tap is covered by the current call's finish
             log("${if (asIncoming) "test ring" else "dial"} ignored: a call is already ${gate.phase()}")
             return
         }
-        val r = Run(gen, asIncoming, startId)
+        val r = Run(gen, asIncoming, startId, legacy)
         run = r
         createChannel()
         if (!promote(notification(r))) {
@@ -173,7 +174,7 @@ class NativeCallEngine : Service() {
             return
         }
         publish(state = if (asIncoming) "ringing" else "dialing")
-        control.execute {
+        lanes.lifecycle {
             try {
                 val ringing = api.ring(language)
                 val id = ringing.getString("id")
@@ -201,7 +202,14 @@ class NativeCallEngine : Service() {
         publish(callId = id)
         val manager = CallsManager(this)
         try {
-            manager.registerAppWithTelecom(CallsManager.CAPABILITY_BASELINE)
+            // P2H-3D A/B (probe only): the official legacy ConnectionService implementation of
+            // Core-Telecom instead of the modern transactional one; routing stays requestEndpointChange.
+            if (r.legacy) {
+                manager.registerAppWithTelecom(CallsManager.CAPABILITY_BASELINE, Build.VERSION.SDK_INT)
+            } else {
+                manager.registerAppWithTelecom(CallsManager.CAPABILITY_BASELINE)
+            }
+            log("telecom path=${if (r.legacy) "legacy ConnectionService (backwardsCompatSdkLevel=${Build.VERSION.SDK_INT})" else "modern transactional"}")
         } catch (e: Exception) {
             log("registerAppWithTelecom FAILED: $e")
             endOnServer(r, "telecom registration failed")
@@ -233,7 +241,14 @@ class NativeCallEngine : Service() {
                 ) {
                     log("addCall OK telecomId=${getCallId()} gen=${r.gen}")
                     r.watchers = launch {
-                        launch { currentCallEndpoint.collect { publish(route = describe(it)) } }
+                        launch {
+                            currentCallEndpoint.collect {
+                                r.endpointName = describe(it)
+                                publish(route = r.endpointName)
+                                routeReport(r, "endpoint")
+                                main.postDelayed({ if (gate.isCurrent(r.gen)) routeReport(r, "endpoint+${ROUTE_SETTLE_MS}ms") }, ROUTE_SETTLE_MS)
+                            }
+                        }
                         launch {
                             availableEndpoints.collect {
                                 r.endpoints = it
@@ -288,7 +303,7 @@ class NativeCallEngine : Service() {
 
     private fun answerOnServer(r: Run) {
         val id = r.callId ?: return
-        control.execute {
+        lanes.lifecycle {
             try {
                 api.answer(id)
                 r.serverConnected = true
@@ -325,7 +340,7 @@ class NativeCallEngine : Service() {
     }
 
     private fun endServerCall(id: String, connected: Boolean, reason: String) {
-        control.execute {
+        lanes.lifecycle {
             try {
                 if (connected) api.hangup(id) else api.decline(id)
                 log("server ${if (connected) "hangup" else "decline"} OK ($reason)")
@@ -356,9 +371,56 @@ class NativeCallEngine : Service() {
         promote(notification(r))
         publish(state = "active")
         val id = r.callId ?: return
-        val audio = getSystemService(AudioManager::class.java)
-        log("live: audio mode=${audio?.mode} (read only; Telecom owns routing)")
+        routeReport(r, "live")
         r.media = Media(r, id).also { it.start() }
+    }
+
+    /**
+     * P2H-3D route telemetry, read only: what Telecom says, what AudioManager says, and
+     * where our own playback actually goes. Telecom=speaker with communicationDevice=
+     * earpiece means the two route owners disagree; both speaker with sound from the
+     * earpiece points at the player / AudioTrack / audio policy. stream= is the legacy
+     * stream the player's attributes map to (0 = STREAM_VOICE_CALL).
+     */
+    private fun routeReport(r: Run, moment: String) {
+        val audio = getSystemService(AudioManager::class.java) ?: return
+        val parts = mutableListOf("route[$moment]", "telecom=${r.endpointName}",
+            "path=${if (r.legacy) "legacy" else "modern"}", "mode=${audio.mode}")
+        @Suppress("DEPRECATION")
+        parts += "speakerphoneOn=${audio.isSpeakerphoneOn}"
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            parts += "commDevice=${audio.communicationDevice?.let(::deviceName) ?: "none"}"
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            parts += "devicesForVoiceComm=[${audio.getAudioDevicesForAttributes(VOICE_ATTRIBUTES).joinToString { deviceName(it) }}]"
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val playing = audio.activePlaybackConfigurations
+            if (playing.isEmpty()) parts += "playback=none"
+            for (config in playing) {
+                val attributes = config.audioAttributes
+                val device = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    config.audioDeviceInfo?.let(::deviceName) ?: "unknown"
+                } else "n/a"
+                parts += "playback(usage=${attributes.usage} content=${attributes.contentType} " +
+                    "stream=${attributes.volumeControlStream} device=$device)"
+            }
+        }
+        log(parts.joinToString(" "))
+    }
+
+    private fun deviceName(device: AudioDeviceInfo): String {
+        val type = when (device.type) {
+            AudioDeviceInfo.TYPE_BUILTIN_EARPIECE -> "earpiece"
+            AudioDeviceInfo.TYPE_BUILTIN_SPEAKER -> "speaker"
+            AudioDeviceInfo.TYPE_BUILTIN_SPEAKER_SAFE -> "speaker_safe"
+            AudioDeviceInfo.TYPE_BLUETOOTH_SCO -> "bt_sco"
+            AudioDeviceInfo.TYPE_BLUETOOTH_A2DP -> "bt_a2dp"
+            AudioDeviceInfo.TYPE_WIRED_HEADSET -> "wired"
+            AudioDeviceInfo.TYPE_BLE_HEADSET -> "ble_headset"
+            else -> "type${device.type}"
+        }
+        return "$type#${device.id}"
     }
 
     private suspend fun CallControlScope.route(r: Run, type: Int) {
@@ -432,7 +494,7 @@ class NativeCallEngine : Service() {
         private fun closeCapture() {
             val current = capture ?: return
             capture = null
-            cleanup.execute {
+            lanes.cleanup {
                 current.close()
                 log("capture closed")
             }
@@ -443,6 +505,7 @@ class NativeCallEngine : Service() {
             if (!live) return
             live = false
             log("media stop ($reason)")
+            stopReplyWatch()
             queue.clear()
             playing = 0
             player?.let {
@@ -454,7 +517,7 @@ class NativeCallEngine : Service() {
             val open = connection
             stream?.interrupt()
             stream = null
-            cleanup.execute { open?.disconnect() }
+            lanes.cleanup { open?.disconnect() }
         }
 
         // ── capture (VoiceCapture thread) ─────────────────────────
@@ -467,8 +530,9 @@ class NativeCallEngine : Service() {
             val seq = ++nextSeq
             currentSeq = seq
             val prev = chain.start(seq)
-            main.post { stopSpeaking() }
-            control.execute { quietly("interrupt $seq") { api.interrupt(id, seq, prev) } }
+            main.post { stopSpeaking(); stopReplyWatch() }
+            // its own lane, short timeout: a stuck barge-in never holds up hangup or answer
+            lanes.interrupt(seq) { quietly("interrupt $seq") { api.interrupt(id, seq, prev) } }
         }
 
         override fun onUtterance(samples: ShortArray) {
@@ -476,7 +540,7 @@ class NativeCallEngine : Service() {
             if (!live || seq == 0) return
             val prev = chain.prev(seq)
             val wav = WavEncoder.encode(samples, VoiceSegmenter.SAMPLE_RATE)
-            uploads.execute {
+            lanes.utterance(seq) {
                 try {
                     val result = api.hear(id, seq, prev, wav)
                     val line = result.optJSONObject("line")
@@ -492,7 +556,7 @@ class NativeCallEngine : Service() {
             val seq = currentSeq
             if (!live || seq == 0) return
             val prev = chain.prev(seq)
-            control.execute { quietly("discard $seq") { api.discard(id, seq, prev) } }
+            lanes.utterance(seq) { quietly("discard $seq") { api.discard(id, seq, prev) } }
         }
 
         override fun onError(code: String) {
@@ -540,13 +604,38 @@ class NativeCallEngine : Service() {
         private fun accept(line: JSONObject) {
             val seq = line.optInt("seq")
             val speaker = line.optString("speaker")
+            if (speaker == "her") main.post { watchReply(seq) }
             if (!lines.accept(seq, speaker)) return
             log("line $seq $speaker: ${line.optString("text").take(60)}")
             main.post {
                 if (!live) return@post
+                stopReplyWatch()
                 queue.addLast(seq)
                 playNext()
             }
+        }
+
+        // ── reply wait (main thread) ──────────────────────────────
+        // Parity with the WebView's P2F path: capture never closes while he thinks, so
+        // she can always speak again, and nothing is cut off. A reply slower than
+        // REPLY_DIAGNOSTIC_MS (the WebView's 45 s) is logged, nothing more: a diagnostic,
+        // not a timeout. (The WebView's 45 s timer only reopens its half-duplex P2E mic.)
+        private var awaitedHer = 0
+        private val replyLate = Runnable {
+            if (live && awaitedHer > 0) {
+                log("no reply ${REPLY_DIAGNOSTIC_MS / 1000}s after her line $awaitedHer (capture stays open; nothing cut off)")
+            }
+        }
+
+        private fun watchReply(herSeq: Int) {
+            if (!live || herSeq <= awaitedHer) return
+            awaitedHer = herSeq
+            main.removeCallbacks(replyLate)
+            main.postDelayed(replyLate, REPLY_DIAGNOSTIC_MS)
+        }
+
+        private fun stopReplyWatch() {
+            main.removeCallbacks(replyLate)
         }
 
         // ── his voice (main thread) ───────────────────────────────
@@ -555,6 +644,7 @@ class NativeCallEngine : Service() {
             val seq = queue.pollFirst() ?: return
             val url = NativeCallProtocol.audioUrl(id, seq) ?: return playNext()
             playing = seq
+            if (player == null) routeReport(owner, "before player")
             val current = player()
             val factory = httpFactory
             val cookie = api.cookie()
@@ -590,6 +680,13 @@ class NativeCallEngine : Service() {
                 .setAudioAttributes(attributes, /* handleAudioFocus= */ false)
                 .build()
             created.addListener(object : Player.Listener {
+                override fun onIsPlayingChanged(isPlaying: Boolean) {
+                    if (!isPlaying || playing == 0) return
+                    val seq = playing
+                    routeReport(owner, "playing $seq")
+                    main.postDelayed({ if (live) routeReport(owner, "playing $seq+500ms") }, 500)
+                }
+
                 override fun onPlaybackStateChanged(state: Int) {
                     if (state == Player.STATE_ENDED && playing != 0) done(false)
                 }
@@ -693,9 +790,7 @@ class NativeCallEngine : Service() {
     override fun onDestroy() {
         run?.let { stopMedia(it, "service destroyed") }
         scope.cancel()
-        control.shutdown()
-        uploads.shutdown()
-        cleanup.shutdown()  // queued closes still run
+        lanes.close()  // queued closes still run
         super.onDestroy()
     }
 
@@ -705,6 +800,13 @@ class NativeCallEngine : Service() {
         const val NOTIFICATION_ID = 0xCA13
         const val EXTRA_LANGUAGE = "language"
         const val EXTRA_GENERATION = "generation"
+        /** Probe-only A/B: register through Core-Telecom's legacy ConnectionService path. */
+        const val EXTRA_LEGACY_TELECOM = "legacy_telecom"
+        private const val ROUTE_SETTLE_MS = 800L
+        private val VOICE_ATTRIBUTES: android.media.AudioAttributes = android.media.AudioAttributes.Builder()
+            .setUsage(android.media.AudioAttributes.USAGE_VOICE_COMMUNICATION)
+            .setContentType(android.media.AudioAttributes.CONTENT_TYPE_SPEECH)
+            .build()
         const val ACTION_DIAL = "elpis.call_engine.DIAL"
         const val ACTION_TEST_RING = "elpis.call_engine.TEST_RING"
         const val ACTION_ANSWER = "elpis.call_engine.ANSWER"
@@ -717,6 +819,9 @@ class NativeCallEngine : Service() {
         private const val ACTION_REMOTE_ENDED = "elpis.call_engine.REMOTE_ENDED"
         private const val ACTION_ENDED = "elpis.call_engine.ENDED"
         private const val TEARDOWN_TIMEOUT_MS = 8000L
+        /** hear/discard N waits at most this long for interrupt N (its own timeout plus margin). */
+        private const val ORDER_WAIT_MS = 6000L
+        private const val REPLY_DIAGNOSTIC_MS = 45_000L
         private const val STREAM_RETRY_MS = 2000L
         private const val MAX_LINES = 300
 
@@ -746,9 +851,10 @@ class NativeCallEngine : Service() {
 
         fun snapshot(): String = synchronized(logLines) { logLines.joinToString("\n") }
 
-        fun send(context: Context, action: String, language: String? = null) {
+        fun send(context: Context, action: String, language: String? = null, legacyTelecom: Boolean = false) {
             val intent = Intent(context, NativeCallEngine::class.java).setAction(action)
             if (language != null) intent.putExtra(EXTRA_LANGUAGE, language)
+            if (legacyTelecom) intent.putExtra(EXTRA_LEGACY_TELECOM, true)
             if (action == ACTION_DIAL || action == ACTION_TEST_RING) {
                 context.startForegroundService(intent)
             } else {
