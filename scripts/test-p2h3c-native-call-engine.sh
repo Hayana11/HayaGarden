@@ -9,7 +9,7 @@ ENGINE="$NATIVE/NativeCallEngine.kt"
 API="$NATIVE/NativeCallApi.kt"
 PROTOCOL="$NATIVE/NativeCallProtocol.java"
 PROBE="$NATIVE/NativeCallProbeActivity.kt"
-SOURCES=(NativeCallEngine.kt NativeCallApi.kt NativeCallProtocol.java NativeCallProbeActivity.kt)
+SOURCES=(NativeCallEngine.kt NativeCallApi.kt NativeCallProtocol.java CallRunGate.java NativeCallProbeActivity.kt)
 FAIL=0
 
 pass() { echo "PASS: $*"; }
@@ -65,12 +65,45 @@ has 'api.ring(language)' "$ENGINE" && python3 - "$ENGINE" <<'PY' && pass "the se
 import sys
 src = open(sys.argv[1]).read()
 begin = src[src.index('private fun begin('):src.index('private fun addCall(')]
-assert begin.index('api.ring(language)') < begin.index('main.post { addCall(id) }')
+assert begin.index('api.ring(language)') < begin.index('addCall(r, id)')
+PY
+
+# Lifecycle latch (review P1, 2026-10-25): one run at a time, each step once, and an
+# old call's commands and callbacks never reach a new one.
+javac -d "$tmp" "$NATIVE/CallRunGate.java" "$ROOT/scripts/jvm-tests/P2H3CCallRunGateTest.java" \
+  && java -cp "$tmp" xyz.lovestyle.home.canary.P2H3CCallRunGateTest \
+  && pass "gate regressions: double dial, double answer, double hangup, redial right after the end" \
+  || fail "call run gate JVM tests"
+python3 - "$ENGINE" <<'PY' && pass "the engine goes through the gate and keeps commands per call" || fail "engine lifecycle wiring"
+import re, sys
+src = open(sys.argv[1]).read()
+def body(signature):
+    part = src[src.index(signature):]
+    return part[:part.index('\n    }\n')]
+service = src[src.index('class NativeCallEngine : Service() {'):src.index('private inner class Run(')]
+assert 'Channel<' not in service, 'a service-wide command channel'
+run = body('private inner class Run(')
+assert 'val commands = Channel<String>(Channel.UNLIMITED)' in run
+assert 'val gen = gate.tryStart()' in body('private fun begin(') and 'if (gen == 0)' in body('private fun begin(')
+assert 'if (gate.isCurrent(gen)) {' in body('private fun begin(')
+assert 'main.post { finish(r, "ring failed") }' in src
+handle = body('private suspend fun CallControlScope.handle(')
+assert handle.count('answerOnServer(r)') == handle.count('gate.tryAnswer(r.gen)) answerOnServer(r)') >= 2, 'an answer path skips the gate'
+d = body('private suspend fun CallControlScope.disconnectAs(')
+assert d.index('if (!gate.tryEnd(r.gen))') < d.index('stopMedia(')
+a = body('private fun answerOnServer(')
+assert a.count('if (gate.isCurrent(r.gen)) r.commands.trySend(') == 2
+f = body('private fun finish(r: Run, reason: String)')
+assert f.split('{', 1)[1].lstrip().startswith('if (!gate.finish(r.gen)) return') and 'r.commands.close()' in f
+assert 'putExtra(EXTRA_GENERATION, r.gen)' in body('private fun command(')
+disp = body('private fun dispatch(')
+assert '!gate.isCurrent(r.gen)' in disp and 'gen != 0 && gen != r.gen' in disp
+assert re.search(r'\bcommands\.trySend', src.replace('r.commands.trySend', '').replace('owner.commands.trySend', '')) is None
 PY
 
 # r3 lesson 1: watchers end with the call.
-has 'watchers = launch {' "$ENGINE" && has 'stopWatchers("disconnect succeeded")' "$ENGINE" \
-  && has 'stopWatchers("telecom onDisconnect")' "$ENGINE" \
+has 'r.watchers = launch {' "$ENGINE" && has 'stopWatchers(r, "disconnect succeeded")' "$ENGINE" \
+  && has 'stopWatchers(r, "telecom onDisconnect")' "$ENGINE" \
   && pass "Telecom state collectors end with the call" || fail "watchers outlive the call"
 
 # r3 lesson 2: local media cleanup never waits on the Telecom scope.
@@ -80,14 +113,14 @@ src = open(sys.argv[1]).read()
 d = src[src.index('private suspend fun CallControlScope.disconnectAs('):]
 d = d[:d.index('\n    }\n')]
 assert d.index('stopMedia(') < d.index('disconnect(DisconnectCause(cause))')
-assert 'stopMedia("telecom onDisconnect")' in src
-assert 'stopMedia("teardown watchdog")' in src
+assert 'stopMedia(r, "telecom onDisconnect")' in src
+assert 'stopMedia(r, "teardown watchdog")' in src
 stop = src[src.index('        fun stop(reason: String) {'):]
 stop = stop[:stop.index('\n        }\n')]
 for blocking in ('.join(', 'runBlocking', 'await', '.disconnect()\n'):
     assert blocking not in stop.replace('cleanup.execute { open?.disconnect() }', ''), blocking
 PY
-has 'TEARDOWN_TIMEOUT_MS' "$ENGINE" && has 'callJob?.cancel()' "$ENGINE" && has 'finish("teardown watchdog")' "$ENGINE" \
+has 'TEARDOWN_TIMEOUT_MS' "$ENGINE" && has 'r.callJob?.cancel()' "$ENGINE" && has 'finish(r, "teardown watchdog")' "$ENGINE" \
   && pass "bounded teardown watchdog" || fail "no bounded teardown"
 
 # r3 lesson 3: the main thread never joins the recording thread.

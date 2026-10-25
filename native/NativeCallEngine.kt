@@ -80,7 +80,6 @@ import org.json.JSONObject
 class NativeCallEngine : Service() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private val main = Handler(Looper.getMainLooper())
-    private val commands = Channel<String>(Channel.UNLIMITED)
     private val api = NativeCallApi()
     /** Control requests (ring/answer/hangup/interrupt/discard), in order. */
     private val control: ExecutorService = Executors.newSingleThreadExecutor { Thread(it, "elpis-call-control") }
@@ -89,47 +88,71 @@ class NativeCallEngine : Service() {
     /** Closing the recorder joins its thread: done here, never on the main thread. */
     private val cleanup: ExecutorService = Executors.newSingleThreadExecutor { Thread(it, "elpis-call-cleanup") }
 
-    private var callJob: Job? = null
-    private var watchers: Job? = null
-    private var endpoints: List<CallEndpointCompat> = emptyList()
-    private var callId: String? = null
-    private var incoming = false
-    private var answered = false
-    private var systemAnswered = false
-    private var hangupRequestedAt = 0L
-    private var scopeExited = false
-    private var finished = false
-    private var media: Media? = null
+    /** One call at a time; every command and async callback is checked against its generation. */
+    private val gate = CallRunGate()
+    private var run: Run? = null
+    private var lastStartId = 0
+
+    /** Everything that belongs to one call: an old call's leftovers can never reach the next one. */
+    private inner class Run(val gen: Int, val incoming: Boolean) {
+        val commands = Channel<String>(Channel.UNLIMITED)
+        var callId: String? = null
+        var callJob: Job? = null
+        var watchers: Job? = null
+        var endpoints: List<CallEndpointCompat> = emptyList()
+        var media: Media? = null
+        var systemAnswered = false
+        /** Connected on the server: her dial from the start, an incoming call once /answer succeeded. */
+        @Volatile var serverConnected = !incoming
+        var hangupRequestedAt = 0L
+        var scopeExited = false
+
+        fun sinceHangup(): String =
+            if (hangupRequestedAt > 0) " ${SystemClock.elapsedRealtime() - hangupRequestedAt}ms after the disconnect request" else ""
+    }
 
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        lastStartId = startId
         val action = intent?.action ?: return START_NOT_STICKY
         when (action) {
             ACTION_DIAL, ACTION_TEST_RING -> begin(action == ACTION_TEST_RING, intent.getStringExtra(EXTRA_LANGUAGE))
-            else -> {
-                if (action == ACTION_HANGUP) log("hangup command received (call running=${callJob != null})")
-                commands.trySend(action)
-            }
+            else -> dispatch(action, intent.getIntExtra(EXTRA_GENERATION, 0))
         }
         return START_NOT_STICKY
     }
 
-    /** Ring through the server first, so Telecom only ever carries a call that exists there. */
-    private fun begin(asIncoming: Boolean, language: String?) {
-        if (callJob != null || callId != null) {
-            log("a call is already running")
+    /** A command for the current call; a notification action names its call's generation. */
+    private fun dispatch(action: String, gen: Int) {
+        val r = run
+        if (action == ACTION_HANGUP) log("hangup command received (phase=${gate.phase()})")
+        if (r == null || !gate.isCurrent(r.gen) || (gen != 0 && gen != r.gen)) {
+            log("$action ignored: not for the current call (gen=$gen, current=${gate.generation()} ${gate.phase()})")
+            if (r == null) stopSelf(lastStartId)  // a late tap must not leave an idle service behind
             return
         }
+        if (r.callJob == null) {
+            // Still ringing the server: only a hangup means anything; the ring result is then dropped.
+            if (action == ACTION_HANGUP && gate.tryEnd(r.gen)) finish(r, "hung up while starting")
+            else log("$action ignored while the call is starting")
+            return
+        }
+        r.commands.trySend(action)
+    }
+
+    /** Ring through the server first, so Telecom only ever carries a call that exists there. */
+    private fun begin(asIncoming: Boolean, language: String?) {
+        val gen = gate.tryStart()
+        if (gen == 0) {
+            log("${if (asIncoming) "test ring" else "dial"} ignored: a call is already ${gate.phase()}")
+            return
+        }
+        val r = Run(gen, asIncoming)
+        run = r
         createChannel()
-        incoming = asIncoming
-        answered = false
-        systemAnswered = false
-        hangupRequestedAt = 0L
-        scopeExited = false
-        finished = false
-        if (!promote(notification(incoming = asIncoming))) {
-            stopSelf()
+        if (!promote(notification(r))) {
+            finish(r, "startForeground refused")
             return
         }
         publish(state = if (asIncoming) "ringing" else "dialing")
@@ -140,208 +163,221 @@ class NativeCallEngine : Service() {
                 log("server ring OK callId=$id language=${ringing.optString("language", "default")}")
                 // She calls him: ring and pick up at once, as the page's dial does.
                 if (!asIncoming) api.answer(id).also { log("server answer OK state=${it.optString("state")}") }
-                main.post { addCall(id) }
+                main.post {
+                    if (gate.isCurrent(gen)) {
+                        addCall(r, id)
+                    } else {
+                        // Hung up (or replaced) while the server was ringing: that server call is ended too.
+                        log("ring result for an ended call (gen $gen): ending server call $id")
+                        endServerCall(id, connected = !asIncoming, reason = "ended while starting")
+                    }
+                }
             } catch (e: Exception) {
                 log("server ring FAILED: $e")
-                main.post { finish("ring failed") }
+                main.post { finish(r, "ring failed") }  // only finishes this run, never a newer one
             }
         }
     }
 
-    private fun addCall(id: String) {
-        if (finished) return
-        callId = id
+    private fun addCall(r: Run, id: String) {
+        r.callId = id
         publish(callId = id)
         val manager = CallsManager(this)
         try {
             manager.registerAppWithTelecom(CallsManager.CAPABILITY_BASELINE)
         } catch (e: Exception) {
             log("registerAppWithTelecom FAILED: $e")
-            endOnServer("telecom registration failed")
-            finish("registerAppWithTelecom failed")
+            endOnServer(r, "telecom registration failed")
+            finish(r, "registerAppWithTelecom failed")
             return
         }
+        if (r.incoming) gate.toRinging(r.gen)
         val attributes = CallAttributesCompat(
             "费奥多尔",
             Uri.parse("hayagarden:call:$id"),
-            if (incoming) CallAttributesCompat.DIRECTION_INCOMING else CallAttributesCompat.DIRECTION_OUTGOING,
+            if (r.incoming) CallAttributesCompat.DIRECTION_INCOMING else CallAttributesCompat.DIRECTION_OUTGOING,
             CallAttributesCompat.CALL_TYPE_AUDIO_CALL,
             CallAttributesCompat.SUPPORTS_SET_INACTIVE,
         )
-        callJob = scope.launch {
+        r.callJob = scope.launch {
             try {
                 manager.addCall(
                     attributes,
-                    onAnswer = { log("telecom onAnswer (system surface)"); commands.trySend(ACTION_SYSTEM_ANSWERED) },
+                    onAnswer = { log("telecom onAnswer (system surface)"); r.commands.trySend(ACTION_SYSTEM_ANSWERED) },
                     onDisconnect = { cause ->
                         log("telecom onDisconnect $cause")
-                        stopMedia("telecom onDisconnect")
-                        stopWatchers("telecom onDisconnect")
-                        if (hangupRequestedAt == 0L) endOnServer("telecom onDisconnect")
-                        commands.trySend(ACTION_ENDED)
+                        stopMedia(r, "telecom onDisconnect")
+                        stopWatchers(r, "telecom onDisconnect")
+                        if (gate.tryEnd(r.gen)) endOnServer(r, "telecom onDisconnect")
+                        r.commands.trySend(ACTION_ENDED)
                     },
                     onSetActive = { log("telecom onSetActive") },
                     onSetInactive = { log("telecom onSetInactive") },
                 ) {
-                    log("addCall OK telecomId=${getCallId()}")
-                    watchers = launch {
+                    log("addCall OK telecomId=${getCallId()} gen=${r.gen}")
+                    r.watchers = launch {
                         launch { currentCallEndpoint.collect { publish(route = describe(it)) } }
                         launch {
                             availableEndpoints.collect {
-                                endpoints = it
+                                r.endpoints = it
                                 log("availableEndpoints [${it.joinToString { e -> describe(e) }}]")
                             }
                         }
-                        launch { isMuted.collect { muted -> media?.setMuted(muted); publish(muted = muted) } }
+                        launch { isMuted.collect { muted -> r.media?.setMuted(muted); publish(muted = muted) } }
                     }
                     launch {
-                        if (!incoming) goLive(setActive(), "setActive")
-                        for (command in commands) if (!handle(command)) break
+                        if (!r.incoming) goLive(r, setActive(), "setActive")
+                        for (command in r.commands) if (!handle(r, command)) break
                     }
                 }
             } catch (e: CancellationException) {
-                log("call scope cancelled" + sinceHangup())
+                log("call scope cancelled" + r.sinceHangup())
                 throw e
             } catch (e: Exception) {
                 log("addCall FAILED: $e")
-                stopMedia("addCall failed")
-                endOnServer("addCall failed")
+                stopMedia(r, "addCall failed")
+                if (gate.tryEnd(r.gen)) endOnServer(r, "addCall failed")
             }
-            scopeExited = true
-            log("CallControlScope exited" + sinceHangup())
-            finish("call scope exited")
+            r.scopeExited = true
+            log("CallControlScope exited" + r.sinceHangup())
+            finish(r, "call scope exited")
         }
     }
 
-    /** Returns false once the call is over. */
-    private suspend fun CallControlScope.handle(command: String): Boolean {
+    /** Returns false once the call is over. Repeats are no-ops: the gate lets each step happen once. */
+    private suspend fun CallControlScope.handle(r: Run, command: String): Boolean {
+        // her own dial is never "rejected": unanswered means an incoming call she declines
+        val answered = gate.phaseOf(r.gen) == CallRunGate.Phase.ACTIVE || !r.incoming
         when (command) {
-            ACTION_ANSWER -> if (incoming && !answered) answerOnServer()
+            ACTION_ANSWER -> if (r.incoming && gate.tryAnswer(r.gen)) answerOnServer(r) else log("answer ignored (${gate.phaseOf(r.gen)})")
             // Telecom already answered it (a system surface): only the server is left to tell.
-            ACTION_SYSTEM_ANSWERED -> if (incoming && !answered) { systemAnswered = true; answerOnServer() }
-            ACTION_SERVER_ANSWERED -> if (!answered) {
-                if (systemAnswered) goLive(CallControlResult.Success(), "answer (system)")
-                else goLive(answer(CallAttributesCompat.CALL_TYPE_AUDIO_CALL), "answer")
+            ACTION_SYSTEM_ANSWERED -> if (r.incoming) {
+                r.systemAnswered = true
+                if (gate.tryAnswer(r.gen)) answerOnServer(r)
             }
-            ACTION_EARPIECE -> route(CallEndpointCompat.TYPE_EARPIECE)
-            ACTION_SPEAKER -> route(CallEndpointCompat.TYPE_SPEAKER)
-            ACTION_BLUETOOTH -> route(CallEndpointCompat.TYPE_BLUETOOTH)
-            ACTION_HANGUP -> return disconnectAs(if (answered) DisconnectCause.LOCAL else DisconnectCause.REJECTED, local = true)
-            ACTION_REMOTE_ENDED -> return disconnectAs(DisconnectCause.REMOTE, local = false)
+            ACTION_SERVER_ANSWERED -> if (gate.phaseOf(r.gen) == CallRunGate.Phase.ANSWERING) {
+                if (r.systemAnswered) goLive(r, CallControlResult.Success(), "answer (system)")
+                else goLive(r, answer(CallAttributesCompat.CALL_TYPE_AUDIO_CALL), "answer")
+            }
+            ACTION_EARPIECE -> route(r, CallEndpointCompat.TYPE_EARPIECE)
+            ACTION_SPEAKER -> route(r, CallEndpointCompat.TYPE_SPEAKER)
+            ACTION_BLUETOOTH -> route(r, CallEndpointCompat.TYPE_BLUETOOTH)
+            ACTION_HANGUP -> return disconnectAs(r, if (answered) DisconnectCause.LOCAL else DisconnectCause.REJECTED, local = true)
+            ACTION_REMOTE_ENDED -> return disconnectAs(r, DisconnectCause.REMOTE, local = false)
             ACTION_ENDED -> return false
         }
         return true
     }
 
-    private fun answerOnServer() {
-        val id = callId ?: return
+    private fun answerOnServer(r: Run) {
+        val id = r.callId ?: return
         control.execute {
             try {
                 api.answer(id)
+                r.serverConnected = true
                 log("server answer OK")
-                commands.trySend(ACTION_SERVER_ANSWERED)
+                if (gate.isCurrent(r.gen)) r.commands.trySend(ACTION_SERVER_ANSWERED)
             } catch (e: Exception) {
                 log("server answer FAILED: $e")
-                commands.trySend(ACTION_REMOTE_ENDED)
+                if (gate.isCurrent(r.gen)) r.commands.trySend(ACTION_REMOTE_ENDED)
             }
         }
     }
 
     /** Local media stops first; the server and Telecom are told after, and nothing waits on the scope. */
-    private suspend fun CallControlScope.disconnectAs(cause: Int, local: Boolean): Boolean {
-        if (hangupRequestedAt > 0) {
-            log("disconnect already requested" + sinceHangup())
-            return true
+    private suspend fun CallControlScope.disconnectAs(r: Run, cause: Int, local: Boolean): Boolean {
+        if (!gate.tryEnd(r.gen)) {
+            log("disconnect ignored: already ${gate.phaseOf(r.gen)}" + r.sinceHangup())
+            return true  // the scope still closes via onDisconnect, or the watchdog
         }
-        hangupRequestedAt = SystemClock.elapsedRealtime()
-        stopMedia(if (local) "hangup" else "server ended the call")
-        if (local) endOnServer("hangup")
+        r.hangupRequestedAt = SystemClock.elapsedRealtime()
+        stopMedia(r, if (local) "hangup" else "server ended the call")
+        if (local) endOnServer(r, "hangup")
         log("disconnect requested cause=${causeName(cause)}")
-        armTeardownWatchdog()
+        armTeardownWatchdog(r)
         val result = disconnect(DisconnectCause(cause))
-        log("disconnect result=$result elapsedMs=${SystemClock.elapsedRealtime() - hangupRequestedAt}")
-        if (result is CallControlResult.Success) stopWatchers("disconnect succeeded")
+        log("disconnect result=$result elapsedMs=${SystemClock.elapsedRealtime() - r.hangupRequestedAt}")
+        if (result is CallControlResult.Success) stopWatchers(r, "disconnect succeeded")
         return false
     }
 
     /** Ringing in: decline; connected on the server (answered, or her dial): hang up. */
-    private fun endOnServer(reason: String) {
-        val id = callId ?: return
-        val wasAnswered = answered || !incoming
+    private fun endOnServer(r: Run, reason: String) {
+        val id = r.callId ?: return
+        endServerCall(id, r.serverConnected, reason)
+    }
+
+    private fun endServerCall(id: String, connected: Boolean, reason: String) {
         control.execute {
             try {
-                if (wasAnswered) api.hangup(id) else api.decline(id)
-                log("server ${if (wasAnswered) "hangup" else "decline"} OK ($reason)")
+                if (connected) api.hangup(id) else api.decline(id)
+                log("server ${if (connected) "hangup" else "decline"} OK ($reason)")
             } catch (e: Exception) {
                 log("server end FAILED ($reason): $e")
             }
         }
     }
 
-    private fun armTeardownWatchdog() {
+    private fun armTeardownWatchdog(r: Run) {
         scope.launch {
             delay(TEARDOWN_TIMEOUT_MS)
-            if (scopeExited || finished) return@launch
-            log("teardown watchdog: call scope still open" + sinceHangup() + "; cancelling it")
-            stopMedia("teardown watchdog")
-            callJob?.cancel()
-            finish("teardown watchdog")
+            if (r.scopeExited || !gate.isCurrent(r.gen)) return@launch
+            log("teardown watchdog: call scope still open" + r.sinceHangup() + "; cancelling it")
+            stopMedia(r, "teardown watchdog")
+            r.callJob?.cancel()
+            finish(r, "teardown watchdog")
         }
     }
 
-    private fun goLive(result: CallControlResult, what: String) {
+    private fun goLive(r: Run, result: CallControlResult, what: String) {
         log("$what -> $result")
         if (result !is CallControlResult.Success) {
-            commands.trySend(ACTION_HANGUP)
+            r.commands.trySend(ACTION_HANGUP)
             return
         }
-        if (answered) return
-        answered = true
-        promote(notification(incoming = false))
+        if (!gate.toActive(r.gen)) return
+        promote(notification(r))
         publish(state = "active")
-        val id = callId ?: return
+        val id = r.callId ?: return
         val audio = getSystemService(AudioManager::class.java)
         log("live: audio mode=${audio?.mode} (read only; Telecom owns routing)")
-        media = Media(id).also { it.start() }
+        r.media = Media(r, id).also { it.start() }
     }
 
-    private suspend fun CallControlScope.route(type: Int) {
+    private suspend fun CallControlScope.route(r: Run, type: Int) {
         if (type == CallEndpointCompat.TYPE_BLUETOOTH && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
             checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED) {
             log("Bluetooth skipped: Nearby devices not granted; the call stays on earpiece/speaker")
             return
         }
-        val target = endpoints.firstOrNull { it.type == type }
+        val target = r.endpoints.firstOrNull { it.type == type }
         if (target == null) {
-            log("no endpoint of type ${typeName(type)} in [${endpoints.joinToString { describe(it) }}]")
+            log("no endpoint of type ${typeName(type)} in [${r.endpoints.joinToString { describe(it) }}]")
             return
         }
         log("requestEndpointChange ${describe(target)} -> ${requestEndpointChange(target)}")
     }
 
     /** Main thread only. Idempotent: hangup, remote end, onDisconnect and the watchdog may all get here. */
-    private fun stopMedia(reason: String) {
-        val current = media ?: return
-        media = null
+    private fun stopMedia(r: Run, reason: String) {
+        val current = r.media ?: return
+        r.media = null
         current.stop(reason)
     }
 
-    private fun stopWatchers(reason: String) {
-        val job = watchers ?: return
-        watchers = null
+    private fun stopWatchers(r: Run, reason: String) {
+        val job = r.watchers ?: return
+        r.watchers = null
         job.cancel()
-        log("state collectors cancelled ($reason)" + sinceHangup())
+        log("state collectors cancelled ($reason)" + r.sinceHangup())
     }
-
-    private fun sinceHangup(): String =
-        if (hangupRequestedAt > 0) " ${SystemClock.elapsedRealtime() - hangupRequestedAt}ms after the disconnect request" else ""
 
     /**
      * One live call's media: capture → interrupt/hear/discard, reply stream → his
      * play queue. Capture, stream and uploads run on their own threads; the player
      * on the main thread.
      */
-    private inner class Media(private val id: String) : VoiceCapture.Listener {
+    private inner class Media(private val owner: Run, private val id: String) : VoiceCapture.Listener {
         @Volatile private var live = true
         private val chain = NativeCallProtocol.UtteranceChain()
         private val lines = NativeCallProtocol.LineQueue()
@@ -469,7 +505,7 @@ class NativeCallEngine : Service() {
                     if (!live) return
                     if (state != null && state != "active") {
                         log("server says the call is $state")
-                        commands.trySend(ACTION_REMOTE_ENDED)
+                        owner.commands.trySend(ACTION_REMOTE_ENDED)
                         return
                     }
                 } catch (e: Exception) {
@@ -579,15 +615,17 @@ class NativeCallEngine : Service() {
         }
     }
 
-    private fun notification(incoming: Boolean): Notification {
+    /** Incoming card until the call is live; its buttons name this call's generation. */
+    private fun notification(r: Run): Notification {
+        val incoming = r.incoming && gate.phaseOf(r.gen) != CallRunGate.Phase.ACTIVE
         val caller = Person.Builder().setName("费奥多尔").setImportant(true).build()
         val open = PendingIntent.getActivity(this, 0,
             Intent(this, NativeCallProbeActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
         val style = if (incoming) {
-            NotificationCompat.CallStyle.forIncomingCall(caller, command(ACTION_HANGUP, 1), command(ACTION_ANSWER, 2))
+            NotificationCompat.CallStyle.forIncomingCall(caller, command(r, ACTION_HANGUP, 1), command(r, ACTION_ANSWER, 2))
         } else {
-            NotificationCompat.CallStyle.forOngoingCall(caller, command(ACTION_HANGUP, 1))
+            NotificationCompat.CallStyle.forOngoingCall(caller, command(r, ACTION_HANGUP, 1))
         }
         val builder = NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.sym_call_incoming)
@@ -603,8 +641,9 @@ class NativeCallEngine : Service() {
         return builder.build()
     }
 
-    private fun command(action: String, code: Int): PendingIntent =
-        PendingIntent.getService(this, code, Intent(this, NativeCallEngine::class.java).setAction(action),
+    private fun command(r: Run, action: String, code: Int): PendingIntent =
+        PendingIntent.getService(this, code,
+            Intent(this, NativeCallEngine::class.java).setAction(action).putExtra(EXTRA_GENERATION, r.gen),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
 
     private fun createChannel() {
@@ -614,22 +653,24 @@ class NativeCallEngine : Service() {
             NotificationChannel(CHANNEL_ID, "原生通话（测试）", NotificationManager.IMPORTANCE_HIGH))
     }
 
-    /** Idempotent: the scope exit, a failed ring and the watchdog may all get here. */
-    private fun finish(reason: String) {
-        if (finished) return
-        finished = true
-        log("finish($reason)")
-        stopMedia("finish")
-        callJob = null
-        callId = null
+    /**
+     * Once per run, and only for the run that is current: the scope exit, a failed
+     * ring and the watchdog may all get here, and an old run can never finish a new one.
+     */
+    private fun finish(r: Run, reason: String) {
+        if (!gate.finish(r.gen)) return
+        log("finish($reason) gen=${r.gen}")
+        stopMedia(r, "finish")
+        r.commands.close()  // late commands for this call go nowhere
+        if (run === r) run = null
         publish(state = "ended")
         stopForeground(STOP_FOREGROUND_REMOVE)
         log("stopForeground done")
-        stopSelf()
+        stopSelf(lastStartId)  // a newer start (an immediate redial) keeps the service
     }
 
     override fun onDestroy() {
-        stopMedia("service destroyed")
+        run?.let { stopMedia(it, "service destroyed") }
         scope.cancel()
         control.shutdown()
         uploads.shutdown()
@@ -642,6 +683,7 @@ class NativeCallEngine : Service() {
         const val CHANNEL_ID = "fyodor_native_call"
         const val NOTIFICATION_ID = 0xCA13
         const val EXTRA_LANGUAGE = "language"
+        const val EXTRA_GENERATION = "generation"
         const val ACTION_DIAL = "elpis.call_engine.DIAL"
         const val ACTION_TEST_RING = "elpis.call_engine.TEST_RING"
         const val ACTION_ANSWER = "elpis.call_engine.ANSWER"
