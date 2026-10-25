@@ -274,7 +274,7 @@ for route_write in ('setCommunicationDevice', 'setSpeakerphoneOn', 'setMode', 'r
 assert 'pinTrack = pinView.isChecked' in probe
 # r3 diagnostic: a bare AudioTrack tone, only from the probe button, inside the current call
 media = src[src.index('private inner class Media'):]
-tone = media[media.index('fun playRawTone():'):]
+tone = media[media.index('fun playRawTone() {'):]
 tone = tone[:tone.index('private fun stopRawTone(')]
 assert '.setAudioAttributes(VOICE_ATTRIBUTES)' in tone and 'track.setPreferredDevice(speaker)' in tone
 assert 'track.release()' in media and 'routeReport(owner, "raw tone+500ms")' in tone
