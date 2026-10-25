@@ -273,10 +273,12 @@ for route_write in ('setCommunicationDevice', 'setSpeakerphoneOn', 'setMode', 'r
     assert route_write not in pin, route_write
 assert 'pinTrack = pinView.isChecked' in probe
 # r3 diagnostic: a bare AudioTrack tone, only from the probe button, inside the current call
-tone = src[src.index('private fun rawTone(r: Run) {'):]
-tone = tone[:tone.index('\n    }\n')]
+media = src[src.index('private inner class Media'):]
+tone = media[media.index('fun playRawTone():'):]
+tone = tone[:tone.index('private fun stopRawTone(')]
 assert '.setAudioAttributes(VOICE_ATTRIBUTES)' in tone and 'track.setPreferredDevice(speaker)' in tone
-assert 'track.release()' in tone and 'routeReport(r, "raw tone+500ms")' in tone
+assert 'track.release()' in media and 'routeReport(owner, "raw tone+500ms")' in tone
+assert 'stopRawTone("media stop")' in media
 for route_write in ('setCommunicationDevice', 'setSpeakerphoneOn', 'setMode', 'requestEndpointChange', 'ExoPlayer'):
     assert route_write not in tone, route_write
 d = src[src.index('private fun dispatch('):]
