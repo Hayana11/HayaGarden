@@ -10,7 +10,7 @@ API="$NATIVE/NativeCallApi.kt"
 PROTOCOL="$NATIVE/NativeCallProtocol.java"
 PROBE="$NATIVE/NativeCallProbeActivity.kt"
 DIAGNOSE="$ROOT/scripts/diagnose-p2h3d-audio.sh"
-SOURCES=(NativeCallEngine.kt NativeCallApi.kt NativeCallProtocol.java CallRunGate.java CallStartIds.java CallLanes.java NativeCallProbeActivity.kt)
+SOURCES=(NativeCallEngine.kt NativeCallApi.kt NativeCallProtocol.java CallRunGate.java CallStartIds.java CallLanes.java AppRouteProbe.java NativeCallProbeActivity.kt)
 FAIL=0
 
 pass() { echo "PASS: $*"; }
@@ -285,6 +285,29 @@ d = src[src.index('private fun dispatch('):]
 d = d[:d.index('\n    }\n')]
 assert d.index('val r = ownOrStop(startId)') < d.index('if (action == ACTION_RAW_TONE) {') < d.index('r.commands.trySend(action)')
 assert 'NativeCallEngine.ACTION_RAW_TONE' in probe
+PY
+# P2H-3D r4 diagnostic: the only AudioManager route write lives in AppRouteProbe, reached
+# only from its probe button inside a live call, and undone by Telecom route taps and media teardown.
+python3 - "$ENGINE" "$PROBE" "$NATIVE/AppRouteProbe.java" <<'PY' && pass "app-uid route probe is button-only and cleared with the call media" || fail "app route probe contract"
+import sys
+src = open(sys.argv[1]).read()
+probe = open(sys.argv[2]).read()
+helper = open(sys.argv[3]).read()
+assert 'audio.setCommunicationDevice(speaker)' in helper and 'audio.clearCommunicationDevice()' in helper
+for other in ('setMode', 'setSpeakerphoneOn', 'requestAudioFocus'):
+    assert other not in helper, other
+assert src.count('appRoute.speaker()') == 1
+d = src[src.index('private fun dispatch('):]
+d = d[:d.index('\n    }\n')]
+assert d.index('val r = ownOrStop(startId)') < d.index('if (action == ACTION_APP_ROUTE_SPEAKER) {') < d.index('r.commands.trySend(action)')
+assert 'r.media?.appRouteSpeaker()' in d and 'r.media?.clearAppRoute("telecom route tap")' in d
+media = src[src.index('private inner class Media'):]
+stop = media[media.index('fun stop(reason: String) {'):]
+stop = stop[:stop.index('\n        }\n')]
+assert 'appRoute.clear("media stop")' in stop
+assert 'NativeCallEngine.ACTION_APP_ROUTE_SPEAKER' in probe
+begin = src[src.index('private fun begin('):src.index('private fun addCall(')]
+assert 'AppRouteProbe' not in begin and 'appRoute' not in begin
 PY
 has '.setAudioAttributes(attributes, /* handleAudioFocus= */ false)' "$ENGINE" && has 'C.USAGE_VOICE_COMMUNICATION' "$ENGINE" \
   && pass "his voice on the communication path, no focus handling" || fail "player attributes"

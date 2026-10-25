@@ -164,6 +164,14 @@ class NativeCallEngine : Service() {
             r.media?.playRawTone() ?: log("raw tone ignored: media is not active")
             return
         }
+        if (action == ACTION_APP_ROUTE_SPEAKER) {
+            r.media?.appRouteSpeaker() ?: log("app route probe ignored: media is not active")
+            return
+        }
+        // a Telecom route tap hands the route back to Telecom alone
+        if (action == ACTION_EARPIECE || action == ACTION_SPEAKER || action == ACTION_BLUETOOTH) {
+            r.media?.clearAppRoute("telecom route tap")
+        }
         r.commands.trySend(action)
     }
 
@@ -484,6 +492,17 @@ class NativeCallEngine : Service() {
         private var rawTrack: AudioTrack? = null
         private var rawToneReport: Runnable? = null
         private var rawToneRelease: Runnable? = null
+        /** P2H-3D r4 diagnostic: an app-uid speaker route inside the Telecom call, cleared with this media. */
+        private val appRoute = AppRouteProbe(getSystemService(AudioManager::class.java)) { log(it) }
+
+        fun appRouteSpeaker() {
+            if (!live) return
+            appRoute.speaker()
+            routeReport(owner, "app route")
+            main.postDelayed({ if (live) routeReport(owner, "app route+500ms") }, 500L)
+        }
+
+        fun clearAppRoute(reason: String) = appRoute.clear(reason)
 
         /**
          * P2H-3D r3 diagnostic: a bare 440 Hz AudioTrack using the same
@@ -597,6 +616,7 @@ class NativeCallEngine : Service() {
             live = false
             log("media stop ($reason)")
             stopRawTone("media stop")
+            appRoute.clear("media stop")
             stopReplyWatch()
             queue.clear()
             playing = 0
@@ -937,6 +957,8 @@ class NativeCallEngine : Service() {
         /** Probe-only diagnostic: a bare AudioTrack tone in the live call, no Media3. */
         const val ACTION_RAW_TONE = "elpis.call_engine.RAW_TONE"
         private const val RAW_TONE_MS = 2_500
+        /** P2H-3D r4 diagnostic (probe button only): the app itself requests the speaker. */
+        const val ACTION_APP_ROUTE_SPEAKER = "elpis.call_engine.APP_ROUTE_SPEAKER"
         private const val ACTION_SYSTEM_ANSWERED = "elpis.call_engine.SYSTEM_ANSWERED"
         private const val ACTION_SERVER_ANSWERED = "elpis.call_engine.SERVER_ANSWERED"
         private const val ACTION_REMOTE_ENDED = "elpis.call_engine.REMOTE_ENDED"

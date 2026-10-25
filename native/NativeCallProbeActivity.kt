@@ -66,6 +66,8 @@ class NativeCallProbeActivity : Activity() {
             "蓝牙" to NativeCallEngine.ACTION_BLUETOOTH,
             // P2H-3D r3 diagnostic: a bare AudioTrack tone in the live call, bypassing Media3
             "诊断：原始音轨 440Hz（绕开 Media3）" to NativeCallEngine.ACTION_RAW_TONE,
+            // P2H-3D r4 diagnostic: the app itself requests the speaker inside the Telecom call
+            "诊断：App 自己切扬声器（Telecom 照开）" to NativeCallEngine.ACTION_APP_ROUTE_SPEAKER,
             "挂断" to NativeCallEngine.ACTION_HANGUP,
         )
         for ((label, action) in buttons) {
