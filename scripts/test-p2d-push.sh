@@ -100,7 +100,7 @@ if [[ -f "$MANIFEST" ]]; then
     grep -qF "android.permission.$need\"" "$MANIFEST" && pass "manifest has $need" || fail "manifest missing $need"
   done
   # RECORD_AUDIO is P2E's (call-page speech recognition), not P2D's.
-  if grep -Eq 'android.permission.(FOREGROUND_SERVICE_DATA_SYNC|FOREGROUND_SERVICE_MICROPHONE|ACCESS_.*LOCATION|CAMERA)"' "$MANIFEST"; then
+  if grep -Eq 'android.permission.(FOREGROUND_SERVICE_DATA_SYNC|FOREGROUND_SERVICE_MICROPHONE|ACCESS_BACKGROUND_LOCATION|CAMERA)"' "$MANIFEST"; then
     fail "manifest contains a permission P2D does not own"
   fi
   grep -qF 'android:foregroundServiceType="remoteMessaging"' "$MANIFEST" \

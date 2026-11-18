@@ -188,3 +188,5 @@ printf '%s\n' \
   '}' > "$DEST_DIR/HealthConfig.java"
 
 echo "Health Bridge R1 injected (device-scoped credential provisioning required)"
+
+bash "$ROOT/scripts/apply-device-tools.sh"
