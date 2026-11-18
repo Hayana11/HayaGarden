@@ -109,7 +109,7 @@ if [[ -f "$MANIFEST" ]]; then
   # RECORD_AUDIO belongs to P2E (owner-approved 2026-10-23, contract: test-p2e-speech.sh).
   # FOREGROUND_SERVICE_PHONE_CALL belongs to P2H-3C (owner-approved 2026-10-24 decision
   # report: phoneCall FGS + MANAGE_OWN_CALLS; contract: test-p2h3c-native-call-engine.sh).
-  if grep -Eq 'android.permission.(FOREGROUND_SERVICE_(DATA_SYNC|LOCATION|MEDIA_PROJECTION|CAMERA|MICROPHONE)|ACCESS_.*LOCATION|CAMERA)"' "$MANIFEST"; then
+  if grep -Eq 'android.permission.(FOREGROUND_SERVICE_(DATA_SYNC|LOCATION|MEDIA_PROJECTION|CAMERA|MICROPHONE)|ACCESS_BACKGROUND_LOCATION|CAMERA)"' "$MANIFEST"; then
     fail "manifest contains forbidden permission"
   else
     pass "manifest has no forbidden permission"

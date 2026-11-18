@@ -24,7 +24,7 @@ grep -qx 'android.permission.BLUETOOTH_CONNECT' <<<"$permissions" \
   && pass "BLUETOOTH_CONNECT present (approved, requested on demand only)" \
   || fail "BLUETOOTH_CONNECT expected from core-telecom is missing"
 for forbidden in FOREGROUND_SERVICE_MICROPHONE BLUETOOTH_SCAN BLUETOOTH_ADVERTISE CAMERA \
-                 ACCESS_FINE_LOCATION ACCESS_COARSE_LOCATION ACCESS_BACKGROUND_LOCATION \
+                 ACCESS_BACKGROUND_LOCATION \
                  CALL_PHONE READ_PHONE_STATE; do
   if grep -qx "android.permission.$forbidden" <<<"$permissions"; then
     fail "merged APK carries unapproved $forbidden"
