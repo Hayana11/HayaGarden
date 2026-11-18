@@ -20,7 +20,7 @@ Lifted by the owner for later phases so far:
   only from a tap on the mic, released on pause, no raw-audio recording, no
   background microphone service. Contract: `scripts/test-p2e-speech.sh`.
 
-Trackers, capture, Pocket and GPS stay forbidden.
+The Reno device-tools phase adds foreground location on an explicit share action and Android's user-invoked screenshot shortcut. Background trackers and Pocket remain outside this phase.
 Do **not** modify Draft PR #14 or the production appId `xyz.lovestyle.home`.
 
 ## Build
