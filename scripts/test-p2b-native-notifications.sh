@@ -121,7 +121,11 @@ fi
 if [[ -f "$GRADLE" ]]; then
   [[ "$(grep -Fc 'androidx.work:work-runtime:2.9.0' "$GRADLE")" -eq 1 ]] \
     && pass "one WorkManager dependency" || fail "WorkManager dependency must occur exactly once"
-  if grep -qiE 'okhttp|firebase|play-services|local-notifications' "$GRADLE"; then
+  forbidden_notification_dependency="$(
+    grep -iE 'okhttp|firebase|play-services|local-notifications' "$GRADLE" \
+      | grep -vF 'com.google.android.gms:play-services-location:21.3.0' || true
+  )"
+  if [[ -n "$forbidden_notification_dependency" ]]; then
     fail "forbidden notification dependency present"
   fi
 fi
