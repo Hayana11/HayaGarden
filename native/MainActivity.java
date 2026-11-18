@@ -25,6 +25,7 @@ public class MainActivity extends BridgeActivity {
     private PhysicalStateStore physicalStateStore;
     private HealthStateStore healthStateStore;
     private ActivityResultLauncher<Set<String>> healthPermissionLauncher;
+    private MotionRecognition motionRecognition;
     private SpeechBridge speechBridge;
     private VoiceBridge voiceBridge;
     private CallAudioBridge callAudioBridge;
@@ -49,6 +50,8 @@ public class MainActivity extends BridgeActivity {
         Bridge bridge = getBridge();
         WebView webView = bridge != null ? bridge.getWebView() : null;
         if (webView != null) {
+            motionRecognition = new MotionRecognition(this);
+            webView.addJavascriptInterface(motionRecognition, "ElpisActivity");
             configureImeResize(webView);
             webView.addJavascriptInterface(
                 new NativeBridge(getApplicationContext()),
@@ -153,6 +156,7 @@ public class MainActivity extends BridgeActivity {
     @Override
     public void onResume() {
         super.onResume();
+        if (motionRecognition != null) motionRecognition.resume();
         if (physicalStateStore != null) {
             physicalStateStore.start();
         }
@@ -166,6 +170,7 @@ public class MainActivity extends BridgeActivity {
 
     @Override
     public void onPause() {
+        if (motionRecognition != null) motionRecognition.pause();
         if (physicalStateStore != null) {
             physicalStateStore.stop();
         }
@@ -200,6 +205,7 @@ public class MainActivity extends BridgeActivity {
     public void onRequestPermissionsResult(
             int requestCode, String[] permissions, int[] grantResults) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        if (motionRecognition != null) motionRecognition.permissionResult(requestCode);
         if (speechBridge != null) {
             speechBridge.onPermissionResult(requestCode, grantResults);
         }
