@@ -113,6 +113,10 @@ grep -Fq '"ElpisNative"' "$MAIN"
 grep -Fq '"ElpisNotifications"' "$MAIN"
 grep -Fq '"ElpisPhysical"' "$MAIN"
 grep -Fq '"ElpisActivity"' "$MAIN"  # Google activity recognition bridge
+! grep -Fq 'motionRecognition.pause()' "$MAIN"  # user-enabled recognition continues off-screen
+grep -Fq 'settings.edit().putString(KEY_SNAPSHOT' "$ROOT/native/MotionRecognition.java"
+grep -Fq 'context.getSharedPreferences(PREFS' "$ROOT/native/MotionRecognition.java"
+grep -Fq 'candidate.getType() == DetectedActivity.WALKING' "$ROOT/native/MotionRecognition.java"
 grep -Fq '"ElpisHealth"' "$MAIN"
 grep -Fq 'HealthSupport.ensureScheduled' "$MAIN"
 grep -Fq 'getBuildInfo' "$ROOT/native/HealthBridge.java"
