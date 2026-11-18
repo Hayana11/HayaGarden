@@ -170,7 +170,6 @@ public class MainActivity extends BridgeActivity {
 
     @Override
     public void onPause() {
-        if (motionRecognition != null) motionRecognition.pause();
         if (physicalStateStore != null) {
             physicalStateStore.stop();
         }
